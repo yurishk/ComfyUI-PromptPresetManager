@@ -447,7 +447,11 @@ class PresetManager {
     const root = h("div", { class: "ppm-dialog-overlay" });
     const dialog = h("div", { class: "ppm-dialog" });
     const form = h("div", { class: "ppm-form" });
-    const close = () => { root.classList.remove("ppm-open"); this._editingPreset = null; };
+    const close = () => {
+      root.classList.remove("ppm-open");
+      this._editingPreset = null;
+      this._editorOnSaved = null;
+    };
     this._presetForm = {
       name: h("input", { class: "ppm-input", type: "text", placeholder: "预设名称" }),
       type: h("select", { class: "ppm-select" }, PRESET_TYPES.map((t) => h("option", { value: t.value }, t.label))),
@@ -485,20 +489,22 @@ class PresetManager {
 
   openPresetEditor(preset, options = {}) {
     const f = this._presetForm;
+    const initial = options.initialDraft || preset || {};
     this._applyOnCreate = Boolean(options.applyOnCreate);
+    this._editorOnSaved = typeof options.onSaved === "function" ? options.onSaved : null;
     this._presetDialogTitle.textContent = preset ? "编辑预设" : "新建预设";
-    f.name.value = preset ? preset.name : "";
-    f.type.value = preset ? preset.type : "positive";
-    f.content.value = preset ? preset.content || "" : "";
-    f.description.value = preset ? preset.description || "" : "";
-    f.tags.value = preset ? (preset.tags || []).join(", ") : "";
+    f.name.value = initial.name || "";
+    f.type.value = initial.type || "positive";
+    f.content.value = initial.content || "";
+    f.description.value = initial.description || "";
+    f.tags.value = Array.isArray(initial.tags) ? initial.tags.join(", ") : (initial.tags || "");
     // refresh folder options
     f.folder.innerHTML = "";
     f.folder.append(h("option", { value: "" }, "未分类"));
     const walk = (nodes, depth) => {
       for (const { folder, children } of nodes) {
         const opt = h("option", { value: folder.id }, "  ".repeat(depth) + folder.name);
-        if (preset && preset.folderId === folder.id) opt.selected = true;
+        if (initial.folderId === folder.id) opt.selected = true;
         f.folder.append(opt);
         if (children) walk(children, depth + 1);
       }
@@ -527,14 +533,17 @@ class PresetManager {
       folderId: f.folder.value || null,
     };
     try {
+      const onSaved = this._editorOnSaved;
+      let saved;
       if (this._editingPreset) {
-        await PresetStore.mutate(() => PresetAPI.savePreset({ ...payload, id: this._editingPreset.id }));
+        saved = await PresetStore.mutate(() => PresetAPI.savePreset({ ...payload, id: this._editingPreset.id }));
         toast("已更新", "success");
       } else {
-        const created = await PresetStore.mutate(() => PresetAPI.savePreset(payload));
+        saved = await PresetStore.mutate(() => PresetAPI.savePreset(payload));
         toast("已创建", "success");
-        if (this._applyOnCreate && this.onSelect) this.onSelect(this.sourceNode, created);
+        if (this._applyOnCreate && this.onSelect) this.onSelect(this.sourceNode, saved);
       }
+      if (onSaved) onSaved(saved);
       close();
     } catch (e) { toast(e.message, "error"); }
   }

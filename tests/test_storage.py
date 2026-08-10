@@ -89,14 +89,26 @@ def test_duplicate_legacy_entries_import_once(isolated_store):
     assert len(matches) == 1
 
 
-def test_node_cache_fingerprint_changes_when_shared_preset_changes(isolated_store, node_module):
-    created = isolated_store.create_preset(_preset())
-
-    first = node_module.PromptPresetManager.IS_CHANGED(created["id"])
-    isolated_store.update_preset(created["id"], {"content": "changed"})
-    second = node_module.PromptPresetManager.IS_CHANGED(created["id"])
+def test_node_cache_fingerprint_changes_with_native_prompt(node_module):
+    first = node_module.PromptPresetManager.IS_CHANGED("first")
+    second = node_module.PromptPresetManager.IS_CHANGED("changed")
 
     assert first != second
+
+
+def test_node_exposes_only_the_native_prompt_widget(node_module):
+    required = node_module.PromptPresetManager.INPUT_TYPES()["required"]
+
+    assert list(required) == ["prompt_text"]
+    assert required["prompt_text"][1]["multiline"] is True
+    assert required["prompt_text"][1]["dynamicPrompts"] is True
+
+
+def test_native_prompt_text_is_the_output_even_when_cleared(node_module):
+    node = node_module.PromptPresetManager()
+
+    assert node.get_text("local {red|blue}") == ("local {red|blue}",)
+    assert node.get_text("") == ("",)
 
 
 def test_vue_bundle_round_trip_preserves_folder_tree_and_preset_content(isolated_store):
