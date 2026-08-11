@@ -71,10 +71,22 @@ export function variantName(name) {
   return `${cleanText(name) || "新预设"} - 变体`;
 }
 
+export function growNodeToMinimum(currentSize, minimumSize) {
+  const readSize = (size, index) => {
+    const value = Number(size?.[index]);
+    return Number.isFinite(value) ? value : 0;
+  };
+  return [
+    Math.max(readSize(currentSize, 0), readSize(minimumSize, 0)),
+    Math.max(readSize(currentSize, 1), readSize(minimumSize, 1)),
+  ];
+}
+
 export function migrateNodeState(widgetValues, properties = {}) {
   const values = Array.isArray(widgetValues) ? widgetValues : [];
   const propertyId = String(properties.promptPresetId || "");
   const dirty = Boolean(properties.promptPresetDirty);
+  const schema = Number(properties.promptPresetSchema || 0);
 
   if (values.length >= 3) {
     return {
@@ -85,10 +97,20 @@ export function migrateNodeState(widgetValues, properties = {}) {
     };
   }
 
-  if (Number(properties.promptPresetSchema || 0) >= 2) {
+  if (schema >= 3) {
     return {
       presetId: propertyId,
-      content: String(values[0] ?? ""),
+      content: String(values[1] ?? values[0] ?? ""),
+      dirty,
+      needsPresetSync: false,
+    };
+  }
+
+  if (schema >= 2) {
+    const content = values.length > 1 && values[0] == null ? values[1] : values[0];
+    return {
+      presetId: propertyId,
+      content: String(content ?? ""),
       dirty,
       needsPresetSync: false,
     };

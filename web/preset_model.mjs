@@ -40,6 +40,23 @@ export function collectFolderIds(folders, rootId) {
   return result;
 }
 
+export function quickSearchPresets(presets, query, limit = 60) {
+  const normalized = String(query || "").trim().toLocaleLowerCase();
+  const result = (Array.isArray(presets) ? presets : []).filter((preset) => (
+    !normalized
+    || [preset.name, preset.content, preset.description, ...(preset.tags || [])]
+      .some((value) => String(value || "").toLocaleLowerCase().includes(normalized))
+  ));
+
+  if (!normalized) {
+    result.sort((a, b) => (
+      (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0)
+      || (b.sortOrder ?? 0) - (a.sortOrder ?? 0)
+    ));
+  }
+  return result.slice(0, Math.max(0, limit));
+}
+
 export function filterPresets(presets, folders, options = {}) {
   const selectedFolderId = options.selectedFolderId ?? null;
   const selectedType = options.selectedType ?? "all";

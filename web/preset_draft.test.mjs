@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { draftFromPreset, draftMetadata, isDraftDirty, migrateNodeState, payloadFromDraft, variantName } from "./preset_draft.mjs";
+import {
+  draftFromPreset,
+  draftMetadata,
+  growNodeToMinimum,
+  isDraftDirty,
+  migrateNodeState,
+  payloadFromDraft,
+  variantName,
+} from "./preset_draft.mjs";
 
 const preset = {
   id: "p1",
@@ -69,6 +77,39 @@ test("current workflows treat the single widget as prompt content", () => {
     migrateNodeState(["preset-like text"], { promptPresetSchema: 2, promptPresetId: "preset_123" }),
     { presetId: "preset_123", content: "preset-like text", dirty: false, needsPresetSync: false },
   );
+});
+
+test("schema 2 recovers prompt text written after a sparse panel slot", () => {
+  assert.deepEqual(
+    migrateNodeState([null, "saved draft"], {
+      promptPresetSchema: 2,
+      promptPresetId: "preset_123",
+      promptPresetDirty: true,
+    }),
+    { presetId: "preset_123", content: "saved draft", dirty: true, needsPresetSync: false },
+  );
+});
+
+test("schema 3 reads prompt text from the stable slot after the panel", () => {
+  assert.deepEqual(
+    migrateNodeState(["ppm-panel-v1", "local draft"], {
+      promptPresetSchema: 3,
+      promptPresetId: "preset_123",
+      promptPresetDirty: true,
+    }),
+    { presetId: "preset_123", content: "local draft", dirty: true, needsPresetSync: false },
+  );
+});
+
+test("automatic layout never shrinks a user-resized editor", () => {
+  assert.deepEqual(growNodeToMinimum([520, 860], [370, 420]), [520, 860]);
+  assert.deepEqual(growNodeToMinimum([320, 260], [370, 420]), [370, 420]);
+});
+
+test("automatic layout accepts ComfyUI's typed node size", () => {
+  const comfyNodeSize = new Float64Array([520, 860]);
+
+  assert.deepEqual(growNodeToMinimum(comfyNodeSize, [370, 420]), [520, 860]);
 });
 
 test("node properties keep editable metadata without duplicating prompt content", () => {

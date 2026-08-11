@@ -1,7 +1,14 @@
 import { app } from "../../scripts/app.js";
 import { PRESET_TYPES, PresetAPI, PresetStore, TYPE_MAP } from "./preset_api.mjs";
-import { draftMetadata, isDraftDirty, migrateNodeState, payloadFromDraft, variantName } from "./preset_draft.mjs";
-import { buildFolderTree } from "./preset_model.mjs";
+import {
+  draftMetadata,
+  growNodeToMinimum,
+  isDraftDirty,
+  migrateNodeState,
+  payloadFromDraft,
+  variantName,
+} from "./preset_draft.mjs?v=4";
+import { buildFolderTree, quickSearchPresets } from "./preset_model.mjs?v=4";
 import { getPresetManager } from "./preset_modal.mjs";
 
 const NODE_NAME = "PromptPresetManager";
@@ -11,13 +18,15 @@ const PROPERTY_DIRTY = "promptPresetDirty";
 const PROPERTY_REVISION = "promptPresetRevision";
 const PROPERTY_SCHEMA = "promptPresetSchema";
 const PROPERTY_DRAFT = "promptPresetDraft";
+const PANEL_WIDGET_VALUE = "ppm-panel-v1";
+const CURRENT_SCHEMA = 3;
 
 function ensureStyles() {
   if (document.getElementById("prompt-preset-manager-css")) return;
   const link = document.createElement("link");
   link.id = "prompt-preset-manager-css";
   link.rel = "stylesheet";
-  link.href = new URL("./preset_manager.css", import.meta.url).href;
+  link.href = new URL("./preset_manager.css?v=4", import.meta.url).href;
   document.head.append(link);
 }
 
@@ -85,10 +94,7 @@ function buildQuickSelect(node, context) {
   function render() {
     list.replaceChildren();
     const query = input.value.trim().toLocaleLowerCase();
-    const matches = context.presets
-      .filter((preset) => !query || [preset.name, preset.content, preset.description, ...(preset.tags || [])]
-        .some((value) => String(value || "").toLocaleLowerCase().includes(query)))
-      .slice(0, 60);
+    const matches = quickSearchPresets(context.presets, query);
     if (!matches.length) {
       list.append(element("div", "ppm-qs-empty", "没有匹配的预设"));
       return;
@@ -451,7 +457,11 @@ function buildPanel(node) {
     getMinHeight: panelHeight,
     getMaxHeight: panelHeight,
   });
-  domWidget.serialize = false;
+  // Keep a workflow slot so the following native widget cannot shift into a
+  // sparse value, while options.serialize=false keeps this UI-only value out
+  // of the backend execution inputs.
+  domWidget.serialize = true;
+  domWidget.serializeValue = () => PANEL_WIDGET_VALUE;
   moveWidgetAfter(node, promptWidget, domWidget);
   root.style.height = "auto";
   root.style.alignSelf = "flex-start";
@@ -463,9 +473,9 @@ function buildPanel(node) {
     const desiredHeight = metadataExpanded
       ? Math.max(600, root.scrollHeight + 230)
       : Math.max(420, root.scrollHeight + 175);
-    const width = Math.max(370, node.size?.[0] || 370);
-    if (Math.abs((node.size?.[1] || 0) - desiredHeight) > 2 || (node.size?.[0] || 0) < 370) {
-      node.setSize([width, desiredHeight]);
+    const [width, height] = growNodeToMinimum(node.size, [370, desiredHeight]);
+    if (Math.abs((node.size?.[1] || 0) - height) > 2 || Math.abs((node.size?.[0] || 0) - width) > 2) {
+      node.setSize([width, height]);
       app.graph?.setDirtyCanvas?.(true, true);
     }
   }
@@ -509,7 +519,7 @@ app.registerExtension({
         this.properties ||= {};
         syncSelectionId(this, migrated.presetId);
         this.properties[PROPERTY_DIRTY] = migrated.dirty;
-        this.properties[PROPERTY_SCHEMA] = 2;
+        this.properties[PROPERTY_SCHEMA] = CURRENT_SCHEMA;
         this._ppmNeedsPresetSync = migrated.needsPresetSync;
         setWidgetValue(this, PROMPT_WIDGET, migrated.content, true);
         const savedDraft = info?.properties?.[PROPERTY_DRAFT];
@@ -536,7 +546,7 @@ app.registerExtension({
       info.properties[PROPERTY_ID] = id;
       info.properties[PROPERTY_DIRTY] = Boolean(this.properties?.[PROPERTY_DIRTY]);
       info.properties[PROPERTY_REVISION] = this.properties?.[PROPERTY_REVISION] || "";
-      info.properties[PROPERTY_SCHEMA] = 2;
+      info.properties[PROPERTY_SCHEMA] = CURRENT_SCHEMA;
       info.properties[PROPERTY_DRAFT] = this._ppmReadDraftMetadata?.() || this.properties?.[PROPERTY_DRAFT] || {};
       return originalSerialize?.apply(this, arguments);
     };
