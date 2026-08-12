@@ -1,5 +1,6 @@
 import { api } from "../../scripts/api.js";
 import { createPresetStore } from "./preset_store.mjs";
+import { tr } from "./i18n.mjs";
 
 const PREFIX = "/promptpreset";
 
@@ -13,7 +14,7 @@ async function call(path, options = {}) {
     try { data = JSON.parse(text); }
     catch { data = text; }
   }
-  if (!response.ok) throw new Error(data?.error || `请求失败 (${response.status})`);
+  if (!response.ok) throw new Error(data?.error || `${tr("请求失败", "Request failed")} (${response.status})`);
   return data;
 }
 
@@ -42,13 +43,13 @@ export const PresetAPI = {
 export const PresetStore = createPresetStore(PresetAPI, { pollMs: 5000 });
 
 export const PRESET_TYPES = [
-  { value: "positive", label: "正面提示词", color: "#169b62" },
-  { value: "negative", label: "负面提示词", color: "#d95050" },
-  { value: "setting", label: "设定标签", color: "#7c6bc4" },
-  { value: "style", label: "风格样式", color: "#c58a25" },
-  { value: "character", label: "角色人物", color: "#c45382" },
-  { value: "scene", label: "场景环境", color: "#168ea0" },
-  { value: "custom", label: "自定义", color: "#58769b" },
+  { value: "positive", get label() { return tr("正面提示词", "Positive Prompt"); }, color: "#169b62" },
+  { value: "negative", get label() { return tr("负面提示词", "Negative Prompt"); }, color: "#d95050" },
+  { value: "setting", get label() { return tr("设定标签", "Setting"); }, color: "#7c6bc4" },
+  { value: "style", get label() { return tr("风格样式", "Style"); }, color: "#c58a25" },
+  { value: "character", get label() { return tr("角色人物", "Character"); }, color: "#c45382" },
+  { value: "scene", get label() { return tr("场景环境", "Scene"); }, color: "#168ea0" },
+  { value: "custom", get label() { return tr("自定义", "Custom"); }, color: "#58769b" },
 ];
 
 export const TYPE_MAP = Object.fromEntries(PRESET_TYPES.map((type) => [type.value, type]));

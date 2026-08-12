@@ -1,3 +1,5 @@
+import { localeCode } from "./i18n.mjs";
+
 export function buildFolderTree(folders) {
   const valid = Array.isArray(folders) ? folders : [];
   const ids = new Set(valid.map((folder) => folder.id));
@@ -12,7 +14,7 @@ export function buildFolderTree(folders) {
   const seen = new Set();
   const build = (parentId) => (byParent.get(parentId) || [])
     .slice()
-    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh"))
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), localeCode()))
     .filter((folder) => !seen.has(folder.id))
     .map((folder) => {
       seen.add(folder.id);
@@ -83,7 +85,7 @@ export function filterPresets(presets, folders, options = {}) {
   }
 
   if (sortField === "name") {
-    result.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh") * sortDir);
+    result.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), localeCode()) * sortDir);
   } else if (sortField === "updatedAt") {
     result.sort((a, b) => ((Date.parse(a.updatedAt) || 0) - (Date.parse(b.updatedAt) || 0)) * sortDir);
   } else {

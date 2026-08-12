@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prompt-preset-manager"
+version = "1.0.0"
+description = "A shared, searchable prompt preset library with folders and in-node editing for ComfyUI"
+authors = [
+  {name = "yurishk"},
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = []
+classifiers = [
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Repository = "https://github.com/yurishk/ComfyUI-PromptPresetManager"
+"Bug Tracker" = "https://github.com/yurishk/ComfyUI-PromptPresetManager/issues"
+
+[tool.comfy]
+PublisherId = "yurishk"
+DisplayName = "Prompt Preset Manager"
+Icon = "https://raw.githubusercontent.com/yurishk/ComfyUI-PromptPresetManager/main/pic/small.png"
+
+[tool.setuptools.package-data]
+"*" = ["*.*"]

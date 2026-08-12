@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { PRESET_TYPES, PresetAPI, PresetStore, TYPE_MAP } from "./preset_api.mjs";
+import { setPromptPresetLocale, tr } from "./i18n.mjs";
 import {
   draftMetadata,
   growNodeToMinimum,
@@ -20,6 +21,8 @@ const PROPERTY_SCHEMA = "promptPresetSchema";
 const PROPERTY_DRAFT = "promptPresetDraft";
 const PANEL_WIDGET_VALUE = "ppm-panel-v1";
 const CURRENT_SCHEMA = 3;
+
+setPromptPresetLocale(app.ui?.settings?.getSettingValue?.("Comfy.Locale") || navigator.language || "en");
 
 function ensureStyles() {
   if (document.getElementById("prompt-preset-manager-css")) return;
@@ -83,7 +86,7 @@ function buildQuickSelect(node, context) {
   const wrapper = element("div", "ppm-qs");
   const input = element("input", "ppm-qs-input");
   input.type = "search";
-  input.placeholder = "搜索并载入预设";
+  input.placeholder = tr("搜索并载入预设", "Search and load a preset");
   input.autocomplete = "off";
   const list = element("div", "ppm-qs-list");
 
@@ -96,7 +99,7 @@ function buildQuickSelect(node, context) {
     const query = input.value.trim().toLocaleLowerCase();
     const matches = quickSearchPresets(context.presets, query);
     if (!matches.length) {
-      list.append(element("div", "ppm-qs-empty", "没有匹配的预设"));
+      list.append(element("div", "ppm-qs-empty", tr("没有匹配的预设", "No matching presets")));
       return;
     }
     for (const preset of matches) {
@@ -104,7 +107,7 @@ function buildQuickSelect(node, context) {
       const badge = element("span", "ppm-badge ppm-badge-sm", type.label);
       badge.style.background = type.color;
       const item = element("button", "ppm-qs-item", [
-        element("span", "ppm-qs-name", preset.name || "未命名预设"),
+        element("span", "ppm-qs-name", preset.name || tr("未命名预设", "Untitled Preset")),
         badge,
       ]);
       item.type = "button";
@@ -130,7 +133,7 @@ function buildQuickSelect(node, context) {
 }
 
 function fillFolderOptions(select, folders, selected) {
-  select.replaceChildren(element("option", "", "未分类"));
+  select.replaceChildren(element("option", "", tr("未分类", "Unfiled")));
   select.options[0].value = "";
   const walk = (nodes, depth) => {
     for (const { folder, children } of nodes) {
@@ -153,36 +156,36 @@ function buildPanel(node) {
   syncSelectionId(node);
 
   const promptWidget = widgetFor(node, PROMPT_WIDGET);
-  if (promptWidget) promptWidget.label = "提示词内容";
+  if (promptWidget) promptWidget.label = tr("提示词内容", "Prompt Text");
 
   const context = { folders: [], presets: [], loaded: false };
   const root = element("div", "ppm-panel ppm-quick-editor");
-  const libraryButton = element("button", "ppm-link-btn", "管理预设库");
+  const libraryButton = element("button", "ppm-link-btn", tr("管理预设库", "Manage Library"));
   libraryButton.type = "button";
   libraryButton.addEventListener("click", () => openManager(node));
   const header = element("div", "ppm-panel-header", [
     element("div", "ppm-panel-heading", [
-      element("span", "ppm-panel-title", "预设快速编辑"),
-      element("span", "ppm-panel-shared", "全局共享"),
+      element("span", "ppm-panel-title", tr("预设快速编辑", "Preset Quick Editor")),
+      element("span", "ppm-panel-shared", tr("全局共享", "Shared Globally")),
     ]),
     libraryButton,
   ]);
 
   const badge = element("span", "ppm-badge ppm-hidden");
-  const selectionName = element("span", "ppm-sel-name", "本地草稿");
-  const syncState = element("span", "ppm-sync-state", "未选择");
+  const selectionName = element("span", "ppm-sel-name", tr("本地草稿", "Local Draft"));
+  const syncState = element("span", "ppm-sync-state", tr("未选择", "Not Selected"));
   const favorite = element("button", "ppm-star", "☆");
   favorite.type = "button";
-  favorite.title = "收藏或取消收藏";
+  favorite.title = tr("收藏或取消收藏", "Add or remove favorite");
   const detach = element("button", "ppm-icon-btn ppm-detach", "×");
   detach.type = "button";
-  detach.title = "解除预设关联并保留当前内容";
+  detach.title = tr("解除预设关联并保留当前内容", "Detach preset and keep current text");
   const selection = element("div", "ppm-sel", [badge, selectionName, syncState, favorite, detach]);
   const quickSelect = buildQuickSelect(node, context);
 
   const nameInput = element("input", "ppm-meta-input ppm-name-input");
   nameInput.type = "text";
-  nameInput.placeholder = "预设名称";
+  nameInput.placeholder = tr("预设名称", "Preset name");
   const typeSelect = element("select", "ppm-meta-select");
   for (const type of PRESET_TYPES) {
     const option = element("option", "", type.label);
@@ -194,34 +197,34 @@ function buildPanel(node) {
   const folderSelect = element("select", "ppm-meta-select ppm-folder-select");
   const tagsInput = element("input", "ppm-meta-input");
   tagsInput.type = "text";
-  tagsInput.placeholder = "标签，逗号分隔";
+  tagsInput.placeholder = tr("标签，逗号分隔", "Tags, separated by commas");
   const descriptionInput = element("input", "ppm-meta-input");
   descriptionInput.type = "text";
-  descriptionInput.placeholder = "描述（可选）";
+  descriptionInput.placeholder = tr("描述（可选）", "Description (optional)");
   const moreFields = element("div", "ppm-more-fields ppm-hidden", [
-    element("label", "ppm-compact-field", [element("span", "", "文件夹"), folderSelect]),
-    element("label", "ppm-compact-field", [element("span", "", "标签"), tagsInput]),
-    element("label", "ppm-compact-field ppm-field-wide", [element("span", "", "描述"), descriptionInput]),
+    element("label", "ppm-compact-field", [element("span", "", tr("文件夹", "Folder")), folderSelect]),
+    element("label", "ppm-compact-field", [element("span", "", tr("标签", "Tags")), tagsInput]),
+    element("label", "ppm-compact-field ppm-field-wide", [element("span", "", tr("描述", "Description")), descriptionInput]),
   ]);
-  const moreButton = element("button", "ppm-more-btn", "更多 ▾");
+  const moreButton = element("button", "ppm-more-btn", tr("更多 ▾", "More ▾"));
   moreButton.type = "button";
   moreButton.addEventListener("click", () => {
     const open = moreFields.classList.toggle("ppm-hidden") === false;
-    moreButton.textContent = open ? "收起 ▴" : "更多 ▾";
+    moreButton.textContent = open ? tr("收起 ▴", "Less ▴") : tr("更多 ▾", "More ▾");
     requestAnimationFrame(() => requestAnimationFrame(fitNode));
   });
 
-  const createButton = element("button", "ppm-btn ppm-btn-primary", "新增预设");
+  const createButton = element("button", "ppm-btn ppm-btn-primary", tr("新增预设", "Create Preset"));
   createButton.type = "button";
-  createButton.title = "创建新预设并保留当前预设";
-  const overwriteButton = element("button", "ppm-btn", "覆盖当前");
+  createButton.title = tr("创建新预设并保留当前预设", "Create a new preset without replacing the selected preset");
+  const overwriteButton = element("button", "ppm-btn", tr("覆盖当前", "Overwrite Selected"));
   overwriteButton.type = "button";
-  overwriteButton.title = "用当前草稿替换已选预设";
-  const advancedButton = element("button", "ppm-btn ppm-btn-compact", "高级");
+  overwriteButton.title = tr("用当前草稿替换已选预设", "Replace the selected preset with this draft");
+  const advancedButton = element("button", "ppm-btn ppm-btn-compact", tr("高级", "Advanced"));
   advancedButton.type = "button";
-  advancedButton.title = "在完整编辑器中修改全部字段";
+  advancedButton.title = tr("在完整编辑器中修改全部字段", "Edit every field in the full editor");
   const actions = element("div", "ppm-panel-actions ppm-editor-actions", [createButton, overwriteButton, advancedButton]);
-  const feedback = element("div", "ppm-node-feedback", "内容请直接在上方原生文本框中编辑");
+  const feedback = element("div", "ppm-node-feedback", tr("内容请直接在上方原生文本框中编辑", "Edit the content in the native text box above"));
 
   root.append(header, selection, quickSelect, primaryFields, moreButton, moreFields, actions, feedback);
 
@@ -317,16 +320,16 @@ function buildPanel(node) {
       badge.style.background = type.color;
       badge.classList.remove("ppm-hidden");
       selectionName.textContent = preset.name;
-      syncState.textContent = dirty ? "有修改" : "已同步";
+      syncState.textContent = dirty ? tr("有修改", "Modified") : tr("已同步", "Synced");
       syncState.dataset.state = dirty ? "dirty" : "clean";
       favorite.textContent = preset.isFavorite ? "★" : "☆";
       favorite.classList.toggle("ppm-star-on", Boolean(preset.isFavorite));
     } else {
       badge.classList.add("ppm-hidden");
-      selectionName.textContent = id ? "原预设已不存在" : "本地草稿";
+      selectionName.textContent = id ? tr("原预设已不存在", "Preset No Longer Exists") : tr("本地草稿", "Local Draft");
       dirty = isDraftDirty(null, readDraft());
       node.properties[PROPERTY_DIRTY] = dirty;
-      syncState.textContent = dirty ? "待新增" : "未选择";
+      syncState.textContent = dirty ? tr("待新增", "Ready to Create") : tr("未选择", "Not Selected");
       syncState.dataset.state = dirty ? "dirty" : "idle";
       favorite.textContent = "☆";
       favorite.classList.remove("ppm-star-on");
@@ -338,7 +341,7 @@ function buildPanel(node) {
     createButton.disabled = !hasName || (preset ? !dirty : false);
     overwriteButton.classList.toggle("ppm-hidden", !preset);
     overwriteButton.disabled = !preset || !dirty || !hasName;
-    advancedButton.textContent = preset ? "高级" : "高级添加";
+    advancedButton.textContent = preset ? tr("高级", "Advanced") : tr("高级添加", "Advanced Create");
     node.graph?.setDirtyCanvas?.(true, true);
   }
 
@@ -361,7 +364,7 @@ function buildPanel(node) {
       node._ppmSyncingDraft = false;
     }
     refreshState();
-    setFeedback(`已载入「${preset.name}」`, "success");
+    setFeedback(`${tr("已载入", "Loaded")} “${preset.name}”`, "success");
   }
   node._ppmApplyPreset = applyPreset;
 
@@ -383,10 +386,12 @@ function buildPanel(node) {
     const preset = currentPreset();
     syncSelectionId(node, "");
     node.properties[PROPERTY_REVISION] = "";
-    if (preset && nameInput.value.trim() === preset.name) nameInput.value = variantName(preset.name);
+    if (preset && nameInput.value.trim() === preset.name) {
+      nameInput.value = variantName(preset.name, tr("变体", "Variant"), tr("新预设", "New Preset"));
+    }
     node.properties[PROPERTY_DIRTY] = true;
     refreshState();
-    setFeedback("已解除关联，当前内容仍保留在节点中", "info");
+    setFeedback(tr("已解除关联，当前内容仍保留在节点中", "Preset detached; current text remains in the node"), "info");
   });
 
   favorite.addEventListener("click", async () => {
@@ -396,7 +401,7 @@ function buildPanel(node) {
     try {
       await PresetStore.mutate(() => PresetAPI.toggleFavorite(preset.id));
     } catch (error) {
-      setFeedback(`收藏失败：${error.message}`, "error");
+      setFeedback(`${tr("收藏失败", "Favorite update failed")}: ${error.message}`, "error");
     } finally {
       favorite.disabled = false;
     }
@@ -406,7 +411,7 @@ function buildPanel(node) {
     const preset = currentPreset();
     const draft = readDraft();
     if (!draft.name.trim()) {
-      setFeedback("请先填写预设名称", "error");
+      setFeedback(tr("请先填写预设名称", "Enter a preset name first"), "error");
       nameInput.focus();
       return;
     }
@@ -417,14 +422,21 @@ function buildPanel(node) {
       if (mode === "overwrite" && preset) {
         payload = payloadFromDraft(draft, preset);
       } else {
-        const name = preset && draft.name.trim() === preset.name ? variantName(preset.name) : draft.name;
+        const name = preset && draft.name.trim() === preset.name
+          ? variantName(preset.name, tr("变体", "Variant"), tr("新预设", "New Preset"))
+          : draft.name;
         payload = payloadFromDraft({ ...draft, name });
       }
       const saved = await PresetStore.mutate(() => PresetAPI.savePreset(payload));
       applyPreset(saved);
-      setFeedback(mode === "overwrite" ? "已覆盖当前预设" : "已保存并切换到新预设", "success");
+      setFeedback(
+        mode === "overwrite"
+          ? tr("已覆盖当前预设", "Selected preset overwritten")
+          : tr("已保存并切换到新预设", "Saved and switched to the new preset"),
+        "success",
+      );
     } catch (error) {
-      setFeedback(`保存失败：${error.message}`, "error");
+      setFeedback(`${tr("保存失败", "Save failed")}: ${error.message}`, "error");
     } finally {
       refreshState();
     }
@@ -507,6 +519,7 @@ app.registerExtension({
     const originalCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function (...args) {
       const result = originalCreated?.apply(this, args);
+      this.title = tr("预设管理器", "Prompt Preset Manager");
       buildPanel(this);
       return result;
     };

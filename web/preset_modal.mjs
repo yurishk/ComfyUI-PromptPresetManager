@@ -3,6 +3,7 @@
 // ComfyUI extension sandbox without any build step.
 
 import { PresetAPI, PresetStore, PRESET_TYPES, TYPE_MAP, DEFAULT_FOLDER_COLOR, downloadJson, sanitizeFilename } from "./preset_api.mjs";
+import { tr } from "./i18n.mjs";
 import { buildFolderTree, collectFolderIds, filterPresets } from "./preset_model.mjs";
 
 const PAGE_SIZE = 30;
@@ -95,12 +96,12 @@ class PresetManager {
     const header = h("div", { class: "ppm-header" });
     const title = h("div", { class: "ppm-title" }, [
       h("span", { class: "ppm-title-icon" }, "▣"),
-      h("span", {}, "预设管理器"),
+      h("span", {}, tr("预设管理器", "Preset Manager")),
     ]);
     const stats = h("span", { class: "ppm-stats" }, "");
     this.statsEl = stats;
     const actions = h("div", { class: "ppm-header-actions" }, [
-      h("button", { class: "ppm-icon-btn ppm-close", title: "关闭", onclick: () => this.close() }, "×"),
+      h("button", { class: "ppm-icon-btn ppm-close", title: tr("关闭", "Close"), onclick: () => this.close() }, "×"),
     ]);
     header.append(title, stats, actions);
 
@@ -139,24 +140,24 @@ class PresetManager {
   _buildToolbarOnce(root) {
     const s = this.state;
     const search = h("input", {
-      class: "ppm-search", type: "text", placeholder: "搜索名称 / 内容 / 标签…",
+      class: "ppm-search", type: "text", placeholder: tr("搜索名称 / 内容 / 标签…", "Search name / content / tags…"),
       value: s.searchQuery,
       oninput: (e) => { s.searchQuery = e.target.value; s.currentPage = 1; this._renderList(); },
     });
     this.searchInput = search;
     const typeSelect = h("select", { class: "ppm-select", onchange: (e) => { s.selectedType = e.target.value; s.currentPage = 1; this._renderList(); } },
-      [{ value: "all", label: "所有类型" }, ...PRESET_TYPES].map((t) =>
+      [{ value: "all", label: tr("所有类型", "All Types") }, ...PRESET_TYPES].map((t) =>
         h("option", { value: t.value, selected: t.value === s.selectedType }, t.label))
     );
     this.typeSelect = typeSelect;
     const sortSelect = h("select", { class: "ppm-select", onchange: (e) => { s.sortField = e.target.value; s.currentPage = 1; this._renderList(); } },
-      [["custom", "自定义排序"], ["name", "按名称"], ["updatedAt", "按时间"]].map(([v, l]) =>
+      [["custom", tr("自定义排序", "Custom Order")], ["name", tr("按名称", "By Name")], ["updatedAt", tr("按时间", "By Date")]].map(([v, l]) =>
         h("option", { value: v, selected: v === s.sortField }, l))
     );
     this.sortSelect = sortSelect;
-    const dirBtn = h("button", { class: "ppm-sort-dir", title: "切换排序方向", onclick: () => { s.sortDir = s.sortDir === "asc" ? "desc" : "asc"; this._renderList(); } }, s.sortDir === "asc" ? "↑" : "↓");
+    const dirBtn = h("button", { class: "ppm-sort-dir", title: tr("切换排序方向", "Reverse sort order"), onclick: () => { s.sortDir = s.sortDir === "asc" ? "desc" : "asc"; this._renderList(); } }, s.sortDir === "asc" ? "↑" : "↓");
     this.sortDirBtn = dirBtn;
-    const newBtn = h("button", { class: "ppm-new-preset", onclick: () => this.openPresetEditor(null) }, [h("span", {}, "+"), h("span", {}, "新建预设")]);
+    const newBtn = h("button", { class: "ppm-new-preset", onclick: () => this.openPresetEditor(null) }, [h("span", {}, "+"), h("span", {}, tr("新建预设", "New Preset"))]);
     this.toolbar = h("div", { class: "ppm-toolbar" }, [
       h("div", { class: "ppm-search-wrap" }, [h("span", { class: "ppm-search-icon" }, "⌕"), search]),
       h("div", { class: "ppm-filters" }, [typeSelect, sortSelect, dirBtn]),
@@ -180,7 +181,7 @@ class PresetManager {
     try {
       this._useSnapshot(await PresetStore.load());
     } catch (e) {
-      toast("加载预设失败: " + e.message, "error");
+      toast(`${tr("加载预设失败", "Failed to load presets")}: ${e.message}`, "error");
     }
   }
 
@@ -213,7 +214,10 @@ class PresetManager {
     this._renderSidebar();
     this._renderList();
     this._syncToolbarOptions();
-    this.statsEl.textContent = `${this.state.presets.length} 个预设 · ${this.state.folders.length} 个文件夹`;
+    this.statsEl.textContent = tr(
+      `${this.state.presets.length} 个预设 · ${this.state.folders.length} 个文件夹`,
+      `${this.state.presets.length} presets · ${this.state.folders.length} folders`,
+    );
   }
 
   _renderList() {
@@ -228,8 +232,8 @@ class PresetManager {
     if (!page.length) {
       root.append(h("div", { class: "ppm-empty" }, [
         h("div", { class: "ppm-empty-icon" }, "—"),
-        h("div", {}, "没有匹配的预设"),
-        h("div", { class: "ppm-empty-hint" }, "试试调整筛选条件或新建一个预设"),
+        h("div", {}, tr("没有匹配的预设", "No Matching Presets")),
+        h("div", { class: "ppm-empty-hint" }, tr("试试调整筛选条件或新建一个预设", "Adjust the filters or create a new preset")),
       ]));
     } else {
       for (const preset of page) root.append(this._renderPresetCard(preset, list));
@@ -245,20 +249,20 @@ class PresetManager {
     root.innerHTML = "";
     root.append(
       h("div", { class: "ppm-side-section" }, [
-        h("div", { class: "ppm-side-title" }, "视图"),
-        this._sideItem("全部", null, this.state.presets.length, null),
-        this._sideItem("收藏", "fav", this.state.presets.filter((p) => p.isFavorite).length, "★"),
-        this._sideItem("未分类", "unfiled", this.state.presets.filter((p) => !p.folderId).length, "○"),
+        h("div", { class: "ppm-side-title" }, tr("视图", "Views")),
+        this._sideItem(tr("全部", "All"), null, this.state.presets.length, null),
+        this._sideItem(tr("收藏", "Favorites"), "fav", this.state.presets.filter((p) => p.isFavorite).length, "★"),
+        this._sideItem(tr("未分类", "Unfiled"), "unfiled", this.state.presets.filter((p) => !p.folderId).length, "○"),
       ])
     );
 
     const foldersSection = h("div", { class: "ppm-side-section ppm-folders" }, [
       h("div", { class: "ppm-side-title" }, [
-        h("span", {}, "文件夹"),
-        h("button", { class: "ppm-mini-btn", title: "新建文件夹", onclick: () => this._openFolderEditor(null) }, "+"),
+        h("span", {}, tr("文件夹", "Folders")),
+        h("button", { class: "ppm-mini-btn", title: tr("新建文件夹", "New folder"), onclick: () => this._openFolderEditor(null) }, "+"),
       ]),
       h("div", { class: "ppm-tree" }, this._renderTree(this._folderTree())),
-      h("button", { class: "ppm-new-folder", onclick: () => this._openFolderEditor(null) }, "+ 新建文件夹"),
+      h("button", { class: "ppm-new-folder", onclick: () => this._openFolderEditor(null) }, `+ ${tr("新建文件夹", "New Folder")}`),
     ]);
     root.append(foldersSection);
   }
@@ -287,7 +291,7 @@ class PresetManager {
       h("span", { class: "ppm-tree-dot", style: { background: folder.color || DEFAULT_FOLDER_COLOR } }),
       h("span", { class: "ppm-tree-name", title: folder.name, onclick: () => { this.state.selectedFolderId = folder.id; this.state.currentPage = 1; this._render(); } }, folder.name),
       h("span", { class: "ppm-tree-count" }, String(count)),
-      h("button", { class: "ppm-tree-edit", title: "编辑文件夹", onclick: (e) => { e.stopPropagation(); this._openFolderEditor(folder); } }, "✎"),
+      h("button", { class: "ppm-tree-edit", title: tr("编辑文件夹", "Edit folder"), onclick: (e) => { e.stopPropagation(); this._openFolderEditor(folder); } }, "✎"),
     ]);
     const wrap = h("div", { class: "ppm-tree-item" }, [head]);
     if (children && children.length) {
@@ -301,10 +305,10 @@ class PresetManager {
     const menu = h("div", { class: "ppm-menu" });
     this._menuEl = menu;
     const items = [
-      { label: "导出全部预设", icon: "↓", fn: () => this._exportAll() },
-      { label: "导出当前文件夹", icon: "□", fn: () => this._exportFolder() },
-      { label: "导出当前筛选结果", icon: "≡", fn: () => this._exportFiltered() },
-      { label: "从文件导入", icon: "↑", fn: () => this._import() },
+      { label: tr("导出全部预设", "Export All Presets"), icon: "↓", fn: () => this._exportAll() },
+      { label: tr("导出当前文件夹", "Export Current Folder"), icon: "□", fn: () => this._exportFolder() },
+      { label: tr("导出当前筛选结果", "Export Filtered Results"), icon: "≡", fn: () => this._exportFiltered() },
+      { label: tr("从文件导入", "Import from File"), icon: "↑", fn: () => this._import() },
     ];
     const dropdown = h("div", { class: "ppm-menu-dropdown" },
       items.map((it) => h("button", { class: "ppm-menu-item", onclick: () => { menu.classList.remove("ppm-open"); it.fn(); } },
@@ -312,7 +316,7 @@ class PresetManager {
     );
     menu.append(
       h("button", { class: "ppm-tool-btn", onclick: (e) => { e.stopPropagation(); menu.classList.toggle("ppm-open"); } },
-        [h("span", { class: "ppm-tool-icon" }, "⋮"), h("span", { class: "ppm-tool-label" }, "导入/导出")])
+        [h("span", { class: "ppm-tool-icon" }, "⋮"), h("span", { class: "ppm-tool-label" }, tr("导入/导出", "Import/Export"))])
     );
     menu.append(dropdown);
     return menu;
@@ -326,7 +330,7 @@ class PresetManager {
       h("span", { class: "ppm-badge", style: { background: type.color } }, type.label),
       h("span", { class: "ppm-card-name", title: preset.name }, preset.name),
       h("span", { class: "ppm-card-spacer" }),
-      h("button", { class: "ppm-star" + (preset.isFavorite ? " ppm-star-on" : ""), title: "收藏", onclick: () => this._toggleFav(preset) }, preset.isFavorite ? "★" : "☆"),
+      h("button", { class: "ppm-star" + (preset.isFavorite ? " ppm-star-on" : ""), title: tr("收藏", "Favorite"), onclick: () => this._toggleFav(preset) }, preset.isFavorite ? "★" : "☆"),
     ]);
 
     const desc = preset.description
@@ -334,18 +338,18 @@ class PresetManager {
       : null;
     const preview = preset.content
       ? h("div", { class: "ppm-card-content", title: preset.content }, this._preview(preset.content))
-      : h("div", { class: "ppm-card-content ppm-mute" }, "（空内容）");
+      : h("div", { class: "ppm-card-content ppm-mute" }, tr("（空内容）", "(Empty)"));
 
     const tags = (preset.tags && preset.tags.length)
       ? h("div", { class: "ppm-card-tags" }, preset.tags.map((t) => h("span", { class: "ppm-tag" }, t)))
       : null;
 
     const actions = h("div", { class: "ppm-card-actions" }, [
-      h("button", { class: "ppm-btn ppm-btn-primary", title: "应用到当前节点", onclick: () => this._apply(preset) }, "应用"),
-      h("button", { class: "ppm-btn", title: "编辑", onclick: () => this.openPresetEditor(preset) }, "编辑"),
-      h("button", { class: "ppm-btn", title: "复制内容到剪贴板", onclick: () => this._copy(preset) }, "复制"),
-      h("button", { class: "ppm-btn", title: "导出此预设", onclick: () => this._exportPreset(preset) }, "导出"),
-      h("button", { class: "ppm-btn ppm-btn-danger", title: "删除", onclick: () => this._delete(preset) }, "删除"),
+      h("button", { class: "ppm-btn ppm-btn-primary", title: tr("应用到当前节点", "Apply to current node"), onclick: () => this._apply(preset) }, tr("应用", "Apply")),
+      h("button", { class: "ppm-btn", title: tr("编辑", "Edit"), onclick: () => this.openPresetEditor(preset) }, tr("编辑", "Edit")),
+      h("button", { class: "ppm-btn", title: tr("复制内容到剪贴板", "Copy content to clipboard"), onclick: () => this._copy(preset) }, tr("复制", "Copy")),
+      h("button", { class: "ppm-btn", title: tr("导出此预设", "Export this preset"), onclick: () => this._exportPreset(preset) }, tr("导出", "Export")),
+      h("button", { class: "ppm-btn ppm-btn-danger", title: tr("删除", "Delete"), onclick: () => this._delete(preset) }, tr("删除", "Delete")),
     ]);
 
     card.append(...[head, desc, preview, tags, actions].filter(Boolean));
@@ -412,19 +416,22 @@ class PresetManager {
 
   _apply(preset) {
     if (this.onSelect) this.onSelect(this.sourceNode, preset);
-    toast(`已应用「${preset.name}」`, "success");
+    toast(`${tr("已应用", "Applied")} “${preset.name}”`, "success");
   }
 
   async _copy(preset) {
     try {
       await navigator.clipboard.writeText(preset.content || "");
-      toast("内容已复制", "success");
-    } catch { toast("复制失败", "error"); }
+      toast(tr("内容已复制", "Content copied"), "success");
+    } catch { toast(tr("复制失败", "Copy failed"), "error"); }
   }
 
   async _delete(preset) {
-    if (!confirm(`确定删除预设「${preset.name}」吗？此操作不可撤销。`)) return;
-    try { await PresetStore.mutate(() => PresetAPI.deletePreset(preset.id)); toast("已删除", "success"); }
+    if (!confirm(tr(
+      `确定删除预设“${preset.name}”吗？此操作不可撤销。`,
+      `Delete preset “${preset.name}”? This cannot be undone.`,
+    ))) return;
+    try { await PresetStore.mutate(() => PresetAPI.deletePreset(preset.id)); toast(tr("已删除", "Deleted"), "success"); }
     catch (e) { toast(e.message, "error"); }
   }
 
@@ -453,32 +460,32 @@ class PresetManager {
       this._editorOnSaved = null;
     };
     this._presetForm = {
-      name: h("input", { class: "ppm-input", type: "text", placeholder: "预设名称" }),
+      name: h("input", { class: "ppm-input", type: "text", placeholder: tr("预设名称", "Preset name") }),
       type: h("select", { class: "ppm-select" }, PRESET_TYPES.map((t) => h("option", { value: t.value }, t.label))),
       folder: h("select", { class: "ppm-select" }),
-      content: h("textarea", { class: "ppm-input ppm-textarea", placeholder: "提示词内容…", rows: 8 }),
-      description: h("input", { class: "ppm-input", type: "text", placeholder: "描述（可选）" }),
-      tags: h("input", { class: "ppm-input", type: "text", placeholder: "标签，逗号分隔" }),
+      content: h("textarea", { class: "ppm-input ppm-textarea", placeholder: tr("提示词内容…", "Prompt content…"), rows: 8 }),
+      description: h("input", { class: "ppm-input", type: "text", placeholder: tr("描述（可选）", "Description (optional)") }),
+      tags: h("input", { class: "ppm-input", type: "text", placeholder: tr("标签，逗号分隔", "Tags, separated by commas") }),
     };
-    this._presetDialogTitle = h("span", { class: "ppm-dialog-title" }, "新建预设");
+    this._presetDialogTitle = h("span", { class: "ppm-dialog-title" }, tr("新建预设", "New Preset"));
     form.append(
       h("div", { class: "ppm-dialog-head" }, [
         this._presetDialogTitle,
-        h("button", { class: "ppm-icon-btn", title: "关闭", onclick: close }, "×"),
+        h("button", { class: "ppm-icon-btn", title: tr("关闭", "Close"), onclick: close }, "×"),
       ]),
-      h("div", { class: "ppm-field" }, [h("label", {}, "名称"), this._presetForm.name]),
+      h("div", { class: "ppm-field" }, [h("label", {}, tr("名称", "Name")), this._presetForm.name]),
       h("div", { class: "ppm-grid-2" }, [
-        h("div", { class: "ppm-field" }, [h("label", {}, "类型"), this._presetForm.type]),
-        h("div", { class: "ppm-field" }, [h("label", {}, "文件夹"), this._presetForm.folder]),
+        h("div", { class: "ppm-field" }, [h("label", {}, tr("类型", "Type")), this._presetForm.type]),
+        h("div", { class: "ppm-field" }, [h("label", {}, tr("文件夹", "Folder")), this._presetForm.folder]),
       ]),
-      h("div", { class: "ppm-field" }, [h("label", {}, "内容"), this._presetForm.content]),
+      h("div", { class: "ppm-field" }, [h("label", {}, tr("内容", "Content")), this._presetForm.content]),
       h("div", { class: "ppm-grid-2" }, [
-        h("div", { class: "ppm-field" }, [h("label", {}, "描述"), this._presetForm.description]),
-        h("div", { class: "ppm-field" }, [h("label", {}, "标签"), this._presetForm.tags]),
+        h("div", { class: "ppm-field" }, [h("label", {}, tr("描述", "Description")), this._presetForm.description]),
+        h("div", { class: "ppm-field" }, [h("label", {}, tr("标签", "Tags")), this._presetForm.tags]),
       ]),
       h("div", { class: "ppm-dialog-foot" }, [
-        h("button", { class: "ppm-btn", onclick: close }, "取消"),
-        h("button", { class: "ppm-btn ppm-btn-primary", onclick: () => this._savePreset(close) }, "保存"),
+        h("button", { class: "ppm-btn", onclick: close }, tr("取消", "Cancel")),
+        h("button", { class: "ppm-btn ppm-btn-primary", onclick: () => this._savePreset(close) }, tr("保存", "Save")),
       ]),
     );
     dialog.append(form);
@@ -492,7 +499,7 @@ class PresetManager {
     const initial = options.initialDraft || preset || {};
     this._applyOnCreate = Boolean(options.applyOnCreate);
     this._editorOnSaved = typeof options.onSaved === "function" ? options.onSaved : null;
-    this._presetDialogTitle.textContent = preset ? "编辑预设" : "新建预设";
+    this._presetDialogTitle.textContent = preset ? tr("编辑预设", "Edit Preset") : tr("新建预设", "New Preset");
     f.name.value = initial.name || "";
     f.type.value = initial.type || "positive";
     f.content.value = initial.content || "";
@@ -500,7 +507,7 @@ class PresetManager {
     f.tags.value = Array.isArray(initial.tags) ? initial.tags.join(", ") : (initial.tags || "");
     // refresh folder options
     f.folder.innerHTML = "";
-    f.folder.append(h("option", { value: "" }, "未分类"));
+    f.folder.append(h("option", { value: "" }, tr("未分类", "Unfiled")));
     const walk = (nodes, depth) => {
       for (const { folder, children } of nodes) {
         const opt = h("option", { value: folder.id }, "  ".repeat(depth) + folder.name);
@@ -522,7 +529,7 @@ class PresetManager {
   async _savePreset(close) {
     const f = this._presetForm;
     const name = f.name.value.trim();
-    if (!name) { toast("请填写名称", "error"); return; }
+    if (!name) { toast(tr("请填写名称", "Enter a name"), "error"); return; }
     const tags = f.tags.value.split(",").map((t) => t.trim()).filter(Boolean);
     const payload = {
       name,
@@ -537,10 +544,10 @@ class PresetManager {
       let saved;
       if (this._editingPreset) {
         saved = await PresetStore.mutate(() => PresetAPI.savePreset({ ...payload, id: this._editingPreset.id }));
-        toast("已更新", "success");
+        toast(tr("已更新", "Updated"), "success");
       } else {
         saved = await PresetStore.mutate(() => PresetAPI.savePreset(payload));
-        toast("已创建", "success");
+        toast(tr("已创建", "Created"), "success");
         if (this._applyOnCreate && this.onSelect) this.onSelect(this.sourceNode, saved);
       }
       if (onSaved) onSaved(saved);
@@ -554,30 +561,30 @@ class PresetManager {
     const dialog = h("div", { class: "ppm-dialog ppm-dialog-sm" });
     const close = () => { root.classList.remove("ppm-open"); this._editingFolder = null; };
     this._folderForm = {
-      name: h("input", { class: "ppm-input", type: "text", placeholder: "文件夹名称" }),
+      name: h("input", { class: "ppm-input", type: "text", placeholder: tr("文件夹名称", "Folder name") }),
       parent: h("select", { class: "ppm-select" }),
       color: h("input", { class: "ppm-color", type: "color", value: DEFAULT_FOLDER_COLOR }),
-      description: h("input", { class: "ppm-input", type: "text", placeholder: "描述（可选）" }),
+      description: h("input", { class: "ppm-input", type: "text", placeholder: tr("描述（可选）", "Description (optional)") }),
     };
-    this._folderDialogTitle = h("span", { class: "ppm-dialog-title" }, "新建文件夹");
-    this._folderDeleteButton = h("button", { class: "ppm-btn ppm-btn-danger ppm-hidden", onclick: () => this._deleteFolder(close) }, "删除文件夹");
+    this._folderDialogTitle = h("span", { class: "ppm-dialog-title" }, tr("新建文件夹", "New Folder"));
+    this._folderDeleteButton = h("button", { class: "ppm-btn ppm-btn-danger ppm-hidden", onclick: () => this._deleteFolder(close) }, tr("删除文件夹", "Delete Folder"));
     dialog.append(
       h("div", { class: "ppm-form" }, [
         h("div", { class: "ppm-dialog-head" }, [
           this._folderDialogTitle,
-          h("button", { class: "ppm-icon-btn", title: "关闭", onclick: close }, "×"),
+          h("button", { class: "ppm-icon-btn", title: tr("关闭", "Close"), onclick: close }, "×"),
         ]),
-        h("div", { class: "ppm-field" }, [h("label", {}, "名称"), this._folderForm.name]),
+        h("div", { class: "ppm-field" }, [h("label", {}, tr("名称", "Name")), this._folderForm.name]),
         h("div", { class: "ppm-grid-2" }, [
-          h("div", { class: "ppm-field" }, [h("label", {}, "颜色"), this._folderForm.color]),
-          h("div", { class: "ppm-field" }, [h("label", {}, "父文件夹"), this._folderForm.parent]),
+          h("div", { class: "ppm-field" }, [h("label", {}, tr("颜色", "Color")), this._folderForm.color]),
+          h("div", { class: "ppm-field" }, [h("label", {}, tr("父文件夹", "Parent Folder")), this._folderForm.parent]),
         ]),
-        h("div", { class: "ppm-field" }, [h("label", {}, "描述"), this._folderForm.description]),
+        h("div", { class: "ppm-field" }, [h("label", {}, tr("描述", "Description")), this._folderForm.description]),
         h("div", { class: "ppm-dialog-foot" }, [
           this._folderDeleteButton,
           h("span", { class: "ppm-dialog-spacer" }),
-          h("button", { class: "ppm-btn", onclick: close }, "取消"),
-          h("button", { class: "ppm-btn ppm-btn-primary", onclick: () => this._saveFolder(close) }, "保存"),
+          h("button", { class: "ppm-btn", onclick: close }, tr("取消", "Cancel")),
+          h("button", { class: "ppm-btn ppm-btn-primary", onclick: () => this._saveFolder(close) }, tr("保存", "Save")),
         ]),
       ])
     );
@@ -592,7 +599,7 @@ class PresetManager {
     f.color.value = folder ? (folder.color || DEFAULT_FOLDER_COLOR) : DEFAULT_FOLDER_COLOR;
     f.description.value = folder ? folder.description || "" : "";
     f.parent.innerHTML = "";
-    f.parent.append(h("option", { value: "" }, "（无）"));
+    f.parent.append(h("option", { value: "" }, tr("（无）", "(None)")));
     const walk = (nodes, depth, excludeId) => {
       for (const { folder: fld, children } of nodes) {
         if (fld.id === excludeId) continue;
@@ -602,7 +609,7 @@ class PresetManager {
     };
     walk(this._folderTree(), 0, folder ? folder.id : null);
     this._editingFolder = folder;
-    this._folderDialogTitle.textContent = folder ? "编辑文件夹" : "新建文件夹";
+    this._folderDialogTitle.textContent = folder ? tr("编辑文件夹", "Edit Folder") : tr("新建文件夹", "New Folder");
     this._folderDeleteButton.classList.toggle("ppm-hidden", !folder);
     this.folderDialog.root.classList.add("ppm-open");
     setTimeout(() => f.name.focus(), 50);
@@ -611,23 +618,26 @@ class PresetManager {
   async _saveFolder(close) {
     const f = this._folderForm;
     const name = f.name.value.trim();
-    if (!name) { toast("请填写文件夹名称", "error"); return; }
+    if (!name) { toast(tr("请填写文件夹名称", "Enter a folder name"), "error"); return; }
     const payload = { name, color: f.color.value, description: f.description.value, parentId: f.parent.value || null };
     try {
       if (this._editingFolder) await PresetStore.mutate(() => PresetAPI.saveFolder({ ...payload, id: this._editingFolder.id }));
       else await PresetStore.mutate(() => PresetAPI.saveFolder(payload));
       close();
-      toast("已保存", "success");
+      toast(tr("已保存", "Saved"), "success");
     } catch (e) { toast(e.message, "error"); }
   }
 
   async _deleteFolder(close) {
     const folder = this._editingFolder;
-    if (!folder || !confirm(`确定删除文件夹「${folder.name}」吗？其中的预设会移到未分类。`)) return;
+    if (!folder || !confirm(tr(
+      `确定删除文件夹“${folder.name}”吗？其中的预设会移到未分类。`,
+      `Delete folder “${folder.name}”? Its presets will be moved to Unfiled.`,
+    ))) return;
     try {
       await PresetStore.mutate(() => PresetAPI.deleteFolder(folder.id));
       close();
-      toast("文件夹已删除", "success");
+      toast(tr("文件夹已删除", "Folder deleted"), "success");
     } catch (e) { toast(e.message, "error"); }
   }
 
@@ -636,21 +646,23 @@ class PresetManager {
     try {
       const bundle = await PresetAPI.exportAll();
       downloadJson(`presets_all.json`, bundle);
-      toast(`已导出 ${bundle.extendedPresets?.length || 0} 个预设`, "success");
+      const count = bundle.extendedPresets?.length || 0;
+      toast(tr(`已导出 ${count} 个预设`, `Exported ${count} presets`), "success");
     } catch (e) { toast(e.message, "error"); }
   }
 
   async _exportFolder() {
     const id = this.state.selectedFolderId;
     if (!id || id === "fav" || id === "unfiled") {
-      toast("请先在左侧选择一个文件夹", "info");
+      toast(tr("请先在左侧选择一个文件夹", "Select a folder in the sidebar first"), "info");
       return;
     }
     try {
       const bundle = await PresetAPI.exportFolder(id);
       const folder = this.state.folders.find((f) => f.id === id);
       downloadJson(`presets_${sanitizeFilename(folder?.name || "folder")}.json`, bundle);
-      toast(`已导出 ${bundle.extendedPresets?.length || 0} 个预设`, "success");
+      const count = bundle.extendedPresets?.length || 0;
+      toast(tr(`已导出 ${count} 个预设`, `Exported ${count} presets`), "success");
     } catch (e) { toast(e.message, "error"); }
   }
 
@@ -658,17 +670,17 @@ class PresetManager {
     try {
       const bundle = await PresetAPI.exportPreset(preset.id);
       downloadJson(`preset_${sanitizeFilename(preset.name)}.json`, bundle);
-      toast("已导出", "success");
+      toast(tr("已导出", "Exported"), "success");
     } catch (e) { toast(e.message, "error"); }
   }
 
   async _exportFiltered() {
     const list = this._filtered();
-    if (!list.length) { toast("没有可导出的预设", "info"); return; }
+    if (!list.length) { toast(tr("没有可导出的预设", "No presets to export"), "info"); return; }
     try {
       const bundle = await PresetAPI.exportSelection(list.map((preset) => preset.id));
       downloadJson("presets_filtered.json", bundle);
-      toast(`已导出 ${list.length} 个预设`, "success");
+      toast(tr(`已导出 ${list.length} 个预设`, `Exported ${list.length} presets`), "success");
     } catch (e) { toast(e.message, "error"); }
   }
 
@@ -679,8 +691,11 @@ class PresetManager {
       if (!file) return;
       try {
         const result = await PresetStore.mutate(() => PresetAPI.importFile(file));
-        toast(`导入完成：新增 ${result.added}，更新 ${result.updated}`, "success");
-      } catch (e) { toast("导入失败: " + e.message, "error"); }
+        toast(tr(
+          `导入完成：新增 ${result.added}，更新 ${result.updated}`,
+          `Import complete: ${result.added} added, ${result.updated} updated`,
+        ), "success");
+      } catch (e) { toast(`${tr("导入失败", "Import failed")}: ${e.message}`, "error"); }
     });
     input.click();
   }

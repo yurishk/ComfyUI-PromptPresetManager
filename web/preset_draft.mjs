@@ -67,8 +67,8 @@ export function isDraftDirty(preset, draft) {
   );
 }
 
-export function variantName(name) {
-  return `${cleanText(name) || "新预设"} - 变体`;
+export function variantName(name, suffix = "变体", fallback = "新预设") {
+  return `${cleanText(name) || fallback} - ${suffix}`;
 }
 
 export function growNodeToMinimum(currentSize, minimumSize) {
