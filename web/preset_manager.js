@@ -211,14 +211,16 @@ function buildPanel(node) {
     requestAnimationFrame(() => requestAnimationFrame(fitNode));
   });
 
-  const saveButton = element("button", "ppm-btn ppm-btn-primary", "新增预设");
-  saveButton.type = "button";
-  const variantButton = element("button", "ppm-btn", "另存变体");
-  variantButton.type = "button";
+  const createButton = element("button", "ppm-btn ppm-btn-primary", "新增预设");
+  createButton.type = "button";
+  createButton.title = "创建新预设并保留当前预设";
+  const overwriteButton = element("button", "ppm-btn", "覆盖当前");
+  overwriteButton.type = "button";
+  overwriteButton.title = "用当前草稿替换已选预设";
   const advancedButton = element("button", "ppm-btn ppm-btn-compact", "高级");
   advancedButton.type = "button";
   advancedButton.title = "在完整编辑器中修改全部字段";
-  const actions = element("div", "ppm-panel-actions ppm-editor-actions", [saveButton, variantButton, advancedButton]);
+  const actions = element("div", "ppm-panel-actions ppm-editor-actions", [createButton, overwriteButton, advancedButton]);
   const feedback = element("div", "ppm-node-feedback", "内容请直接在上方原生文本框中编辑");
 
   root.append(header, selection, quickSelect, primaryFields, moreButton, moreFields, actions, feedback);
@@ -332,10 +334,10 @@ function buildPanel(node) {
 
     favorite.disabled = !preset;
     detach.disabled = !id;
-    saveButton.textContent = preset ? "覆盖当前" : "新增预设";
-    saveButton.disabled = preset ? !dirty : !nameInput.value.trim();
-    variantButton.classList.toggle("ppm-hidden", !preset);
-    variantButton.disabled = !preset;
+    const hasName = Boolean(nameInput.value.trim());
+    createButton.disabled = !hasName || (preset ? !dirty : false);
+    overwriteButton.classList.toggle("ppm-hidden", !preset);
+    overwriteButton.disabled = !preset || !dirty || !hasName;
     advancedButton.textContent = preset ? "高级" : "高级添加";
     node.graph?.setDirtyCanvas?.(true, true);
   }
@@ -408,8 +410,8 @@ function buildPanel(node) {
       nameInput.focus();
       return;
     }
-    saveButton.disabled = true;
-    variantButton.disabled = true;
+    createButton.disabled = true;
+    overwriteButton.disabled = true;
     try {
       let payload;
       if (mode === "overwrite" && preset) {
@@ -428,8 +430,8 @@ function buildPanel(node) {
     }
   }
 
-  saveButton.addEventListener("click", () => saveDraft(currentPreset() ? "overwrite" : "create"));
-  variantButton.addEventListener("click", () => saveDraft("variant"));
+  createButton.addEventListener("click", () => saveDraft("create"));
+  overwriteButton.addEventListener("click", () => saveDraft("overwrite"));
   advancedButton.addEventListener("click", () => {
     const preset = currentPreset();
     const manager = getPresetManager();
