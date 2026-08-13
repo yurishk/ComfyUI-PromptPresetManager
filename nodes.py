@@ -28,28 +28,46 @@ class PromptPresetManager:
                     },
                 ),
             },
+            "optional": {
+                "text": (
+                    "STRING",
+                    {
+                        "forceInput": True,
+                        "tooltip": "Optional external text. Non-empty input replaces the editable prompt after execution.",
+                    },
+                ),
+            },
         }
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("text",)
     FUNCTION = "get_text"
     CATEGORY = CATEGORY
-    DESCRIPTION = "Load prompts from a shared preset library, edit them in the node, and output text."
-    OUTPUT_TOOLTIPS = ("Text from the selected preset or the current local draft.",)
+    DESCRIPTION = "Manage shared prompt presets and optionally capture non-empty text from an upstream node."
+    OUTPUT_TOOLTIPS = ("External text when non-empty; otherwise the editable local prompt.",)
 
     @classmethod
     def IS_CHANGED(
         cls,
         prompt_text: str = "",
+        text: str | None = None,
     ):
-        """Invalidate cache whenever the native prompt text changes."""
-        digest = hashlib.sha256(str(prompt_text).encode("utf-8")).hexdigest()
-        return f"native:{digest}"
+        """Invalidate cache whenever either local or external text changes."""
+        fingerprint = f"{prompt_text}\0{text if text is not None else ''}"
+        digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+        return f"text:{digest}"
 
     def get_text(
         self,
         prompt_text: str = "",
+        text: str | None = None,
     ):
+        external_text = "" if text is None else str(text)
+        if external_text != "":
+            return {
+                "ui": {"external_text": [external_text]},
+                "result": (external_text,),
+            }
         return (str(prompt_text),)
 
 

@@ -96,12 +96,17 @@ def test_node_cache_fingerprint_changes_with_native_prompt(node_module):
     assert first != second
 
 
-def test_node_exposes_only_the_native_prompt_widget(node_module):
-    required = node_module.PromptPresetManager.INPUT_TYPES()["required"]
+def test_node_exposes_native_prompt_widget_and_optional_text_input(node_module):
+    input_types = node_module.PromptPresetManager.INPUT_TYPES()
+    required = input_types["required"]
+    optional = input_types["optional"]
 
     assert list(required) == ["prompt_text"]
     assert required["prompt_text"][1]["multiline"] is True
     assert required["prompt_text"][1]["dynamicPrompts"] is True
+    assert list(optional) == ["text"]
+    assert optional["text"][0] == "STRING"
+    assert optional["text"][1]["forceInput"] is True
 
 
 def test_native_prompt_text_is_the_output_even_when_cleared(node_module):
@@ -109,6 +114,29 @@ def test_native_prompt_text_is_the_output_even_when_cleared(node_module):
 
     assert node.get_text("local {red|blue}") == ("local {red|blue}",)
     assert node.get_text("") == ("",)
+
+
+def test_nonempty_external_text_overrides_output_and_updates_ui(node_module):
+    node = node_module.PromptPresetManager()
+
+    assert node.get_text("local draft", "enhanced prompt") == {
+        "ui": {"external_text": ["enhanced prompt"]},
+        "result": ("enhanced prompt",),
+    }
+
+
+def test_empty_external_text_falls_back_to_native_prompt(node_module):
+    node = node_module.PromptPresetManager()
+
+    assert node.get_text("local draft", "") == ("local draft",)
+    assert node.get_text("local draft", None) == ("local draft",)
+
+
+def test_node_cache_fingerprint_includes_external_text(node_module):
+    local_only = node_module.PromptPresetManager.IS_CHANGED("local draft")
+    external = node_module.PromptPresetManager.IS_CHANGED("local draft", "enhanced prompt")
+
+    assert local_only != external
 
 
 def test_vue_bundle_round_trip_preserves_folder_tree_and_preset_content(isolated_store):

@@ -281,6 +281,16 @@ function buildPanel(node) {
     feedback.dataset.kind = kind;
   }
 
+  function applyExternalText(value) {
+    const incoming = String(value ?? "");
+    if (incoming === "") return;
+    setWidgetValue(node, PROMPT_WIDGET, incoming, true);
+    refreshState();
+    setFeedback(tr("已接收外部文本，可继续编辑", "External text received; you can continue editing"), "success");
+    node.graph?.setDirtyCanvas?.(true, true);
+  }
+  node._ppmApplyExternalText = applyExternalText;
+
   function writeDraft(preset, content = preset?.content ?? "") {
     const wasSyncing = node._ppmSyncingDraft;
     node._ppmSyncingDraft = true;
@@ -570,6 +580,17 @@ app.registerExtension({
     nodeType.prototype.onAdded = function (...args) {
       const result = originalAdded?.apply(this, args);
       syncSelectionId(this);
+      return result;
+    };
+
+    const originalExecuted = nodeType.prototype.onExecuted;
+    nodeType.prototype.onExecuted = function (message) {
+      const result = originalExecuted?.apply(this, arguments);
+      const payload = message?.external_text;
+      const incoming = Array.isArray(payload) ? payload[0] : payload;
+      if (typeof incoming === "string" && incoming !== "") {
+        this._ppmApplyExternalText?.(incoming);
+      }
       return result;
     };
   },
