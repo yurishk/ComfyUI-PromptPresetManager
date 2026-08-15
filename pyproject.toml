@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prompt-preset-manager"
-version = "1.0.1"
+version = "1.0.2"
 description = "A shared, searchable prompt preset library with folders and in-node editing for ComfyUI"
 authors = [
   {name = "yurishk"},

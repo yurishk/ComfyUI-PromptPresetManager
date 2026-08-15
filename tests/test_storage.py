@@ -109,6 +109,10 @@ def test_node_exposes_native_prompt_widget_and_optional_text_input(node_module):
     assert optional["text"][1]["forceInput"] is True
 
 
+def test_node_executes_as_a_text_capture_output(node_module):
+    assert node_module.PromptPresetManager.OUTPUT_NODE is True
+
+
 def test_native_prompt_text_is_the_output_even_when_cleared(node_module):
     node = node_module.PromptPresetManager()
 

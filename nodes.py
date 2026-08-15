@@ -41,6 +41,7 @@ class PromptPresetManager:
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("text",)
+    OUTPUT_NODE = True
     FUNCTION = "get_text"
     CATEGORY = CATEGORY
     DESCRIPTION = "Manage shared prompt presets and optionally capture non-empty text from an upstream node."

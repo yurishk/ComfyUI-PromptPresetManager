@@ -13,6 +13,7 @@ A shared, searchable prompt preset library for ComfyUI. Keep reusable prompts or
 - **Full library manager**: organize presets with nested folders, types, tags, descriptions, favorites, filters, and sorting.
 - **Workflow-safe drafts**: the selected preset and local edits are serialized with the node, including duplicated nodes and reopened workflows.
 - **Native text output**: outputs one standard `STRING`, so it works with normal ComfyUI prompt inputs.
+- **Upstream text capture**: connect any `STRING` output to the optional `text` input; non-empty results are written back into the editable prompt box after execution.
 - **Import and export**: back up or move the whole library, a folder, a filtered view, or an individual preset.
 - **English and Chinese UI**: follows the ComfyUI/browser locale automatically.
 
@@ -41,7 +42,8 @@ Restart ComfyUI after cloning. The plugin has no third-party Python dependencies
 2. Open **Preset Library**, create folders and presets, or import an existing library.
 3. Search and select a preset in the node.
 4. Edit the native prompt box when a workflow needs a local variation.
-5. Connect the `text` output to any node that accepts a `STRING` prompt.
+5. Optionally connect an upstream `STRING` to the `text` input to capture and continue editing its result.
+6. Connect the `text` output to any node that accepts a `STRING` prompt, or leave it unconnected and run this node as a text capture endpoint.
 
 The shared library is stored in `data/presets.json`. Automatic backups are written to `backups/`. Both directories are local user data and are excluded from Git.
 
@@ -66,6 +68,7 @@ The shared library is stored in `data/presets.json`. Automatic backups are writt
 - **完整管理界面**：支持多级文件夹、类型、标签、说明、收藏、筛选与排序。
 - **工作流持久化**：当前选择和本地修改会随节点保存，复制节点、切换或重新打开工作流后仍可恢复。
 - **原生文本输出**：仅输出标准 `STRING`，可直接连接 ComfyUI 的普通提示词输入。
+- **上游文本接收**：可将任意 `STRING` 输出连接到可选的 `text` 输入；执行后的非空结果会写回原生提示词框，方便继续修改。
 - **导入与导出**：可备份或迁移整个预设库、文件夹、筛选结果或单个预设。
 - **中英文界面**：根据 ComfyUI 或浏览器语言自动切换。
 
@@ -94,7 +97,8 @@ git clone https://github.com/yurishk/ComfyUI-PromptPresetManager.git
 2. 打开“预设库”，创建文件夹和预设，或导入已有预设库。
 3. 在节点中搜索并选择预设。
 4. 某个工作流需要单独调整时，直接编辑节点内的原生提示词文本框。
-5. 将 `text` 输出连接到任意接受 `STRING` 提示词的节点。
+5. 如需接收提示词强化等上游结果，将其 `STRING` 输出连接到本节点的 `text` 输入。
+6. 可将本节点的 `text` 输出继续连接到下游，也可以不连接，将本节点直接作为文本接收终点运行。
 
 全局预设库保存在 `data/presets.json`，自动备份位于 `backups/`。这两个目录属于本地用户数据，不会提交到 Git。
 

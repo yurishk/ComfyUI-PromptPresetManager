@@ -8,7 +8,7 @@ import {
   migrateNodeState,
   payloadFromDraft,
   variantName,
-} from "./preset_draft.mjs?v=4";
+} from "./preset_draft.mjs?v=5";
 import { buildFolderTree, quickSearchPresets } from "./preset_model.mjs?v=4";
 import { getPresetManager } from "./preset_modal.mjs";
 
@@ -19,8 +19,9 @@ const PROPERTY_DIRTY = "promptPresetDirty";
 const PROPERTY_REVISION = "promptPresetRevision";
 const PROPERTY_SCHEMA = "promptPresetSchema";
 const PROPERTY_DRAFT = "promptPresetDraft";
+const PROPERTY_TEXT = "promptPresetText";
 const PANEL_WIDGET_VALUE = "ppm-panel-v1";
-const CURRENT_SCHEMA = 3;
+const CURRENT_SCHEMA = 4;
 
 setPromptPresetLocale(app.ui?.settings?.getSettingValue?.("Comfy.Locale") || navigator.language || "en");
 
@@ -63,6 +64,23 @@ function setWidgetValue(node, name, value, notify = true) {
   if (!widget || widget.value === value) return;
   widget.value = value;
   if (notify) widget.callback?.(value);
+}
+
+function setPromptValue(node, value, notify = true) {
+  const text = String(value ?? "");
+  node.properties ||= {};
+  node.properties[PROPERTY_TEXT] = text;
+  setWidgetValue(node, PROMPT_WIDGET, text, notify);
+}
+
+function beginGraphChange(node) {
+  const canvas = app.canvas;
+  canvas?.emitBeforeChange?.();
+  node.graph?.beforeChange?.();
+  return () => {
+    node.graph?.afterChange?.();
+    canvas?.emitAfterChange?.();
+  };
 }
 
 function moveWidgetAfter(node, widget, anchor) {
@@ -284,10 +302,15 @@ function buildPanel(node) {
   function applyExternalText(value) {
     const incoming = String(value ?? "");
     if (incoming === "") return;
-    setWidgetValue(node, PROMPT_WIDGET, incoming, true);
-    refreshState();
-    setFeedback(tr("已接收外部文本，可继续编辑", "External text received; you can continue editing"), "success");
-    node.graph?.setDirtyCanvas?.(true, true);
+    const endChange = beginGraphChange(node);
+    try {
+      setPromptValue(node, incoming, true);
+      refreshState();
+      setFeedback(tr("已接收外部文本，可继续编辑", "External text received; you can continue editing"), "success");
+      node.graph?.setDirtyCanvas?.(true, true);
+    } finally {
+      endChange();
+    }
   }
   node._ppmApplyExternalText = applyExternalText;
 
@@ -296,7 +319,7 @@ function buildPanel(node) {
     node._ppmSyncingDraft = true;
     try {
       hydrateMetadata(preset);
-      setWidgetValue(node, PROMPT_WIDGET, String(content ?? ""), true);
+      setPromptValue(node, content, true);
     } finally {
       node._ppmSyncingDraft = wasSyncing;
     }
@@ -357,6 +380,7 @@ function buildPanel(node) {
 
   function markDraftChanged() {
     if (node._ppmSyncingDraft) return;
+    node.properties[PROPERTY_TEXT] = String(promptWidget?.value ?? "");
     persistMetadata();
     node.properties[PROPERTY_DIRTY] = isDraftDirty(currentPreset(), readDraft());
     refreshState();
@@ -478,6 +502,8 @@ function buildPanel(node) {
   const panelHeight = () => Math.max(210, Math.ceil(root.scrollHeight + 4));
   const domWidget = node.addDOMWidget("preset_panel", "prompt-preset", root, {
     serialize: false,
+    getValue: () => PANEL_WIDGET_VALUE,
+    setValue: () => {},
     getMinHeight: panelHeight,
     getMaxHeight: panelHeight,
   });
@@ -546,7 +572,7 @@ app.registerExtension({
         this.properties[PROPERTY_DIRTY] = migrated.dirty;
         this.properties[PROPERTY_SCHEMA] = CURRENT_SCHEMA;
         this._ppmNeedsPresetSync = migrated.needsPresetSync;
-        setWidgetValue(this, PROMPT_WIDGET, migrated.content, true);
+        setPromptValue(this, migrated.content, true);
         const savedDraft = info?.properties?.[PROPERTY_DRAFT];
         if (savedDraft && typeof savedDraft === "object") {
           this.properties[PROPERTY_DRAFT] = savedDraft;
@@ -566,14 +592,25 @@ app.registerExtension({
 
     const originalSerialize = nodeType.prototype.onSerialize;
     nodeType.prototype.onSerialize = function (info) {
+      const result = originalSerialize?.apply(this, arguments);
       const id = syncSelectionId(this);
+      const promptWidget = widgetFor(this, PROMPT_WIDGET);
+      const text = String(this.properties?.[PROPERTY_TEXT] ?? promptWidget?.value ?? "");
       info.properties ||= {};
       info.properties[PROPERTY_ID] = id;
       info.properties[PROPERTY_DIRTY] = Boolean(this.properties?.[PROPERTY_DIRTY]);
       info.properties[PROPERTY_REVISION] = this.properties?.[PROPERTY_REVISION] || "";
       info.properties[PROPERTY_SCHEMA] = CURRENT_SCHEMA;
       info.properties[PROPERTY_DRAFT] = this._ppmReadDraftMetadata?.() || this.properties?.[PROPERTY_DRAFT] || {};
-      return originalSerialize?.apply(this, arguments);
+      info.properties[PROPERTY_TEXT] = text;
+      this.properties[PROPERTY_TEXT] = text;
+      if (Array.isArray(info.widgets_values) && Array.isArray(this.widgets)) {
+        const panelIndex = this.widgets.findIndex((widget) => widget.name === "preset_panel");
+        const promptIndex = this.widgets.indexOf(promptWidget);
+        if (panelIndex >= 0) info.widgets_values[panelIndex] = PANEL_WIDGET_VALUE;
+        if (promptIndex >= 0) info.widgets_values[promptIndex] = text;
+      }
+      return result;
     };
 
     const originalAdded = nodeType.prototype.onAdded;

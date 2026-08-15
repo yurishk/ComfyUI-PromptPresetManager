@@ -101,6 +101,29 @@ test("schema 3 reads prompt text from the stable slot after the panel", () => {
   );
 });
 
+test("schema 4 uses the durable prompt property instead of an empty widget slot", () => {
+  assert.deepEqual(
+    migrateNodeState(["", ""], {
+      promptPresetSchema: 4,
+      promptPresetId: "preset_123",
+      promptPresetText: "durable local draft",
+      promptPresetDirty: true,
+    }),
+    { presetId: "preset_123", content: "durable local draft", dirty: true, needsPresetSync: false },
+  );
+});
+
+test("schema 3 selected presets recover from the known double-empty serialization bug", () => {
+  assert.deepEqual(
+    migrateNodeState(["", ""], {
+      promptPresetSchema: 3,
+      promptPresetId: "preset_123",
+      promptPresetDirty: true,
+    }),
+    { presetId: "preset_123", content: "", dirty: false, needsPresetSync: true },
+  );
+});
+
 test("automatic layout never shrinks a user-resized editor", () => {
   assert.deepEqual(growNodeToMinimum([520, 860], [370, 420]), [520, 860]);
   assert.deepEqual(growNodeToMinimum([320, 260], [370, 420]), [370, 420]);

@@ -88,6 +88,15 @@ export function migrateNodeState(widgetValues, properties = {}) {
   const dirty = Boolean(properties.promptPresetDirty);
   const schema = Number(properties.promptPresetSchema || 0);
 
+  if (schema >= 4 && Object.hasOwn(properties, "promptPresetText")) {
+    return {
+      presetId: propertyId,
+      content: String(properties.promptPresetText ?? ""),
+      dirty,
+      needsPresetSync: false,
+    };
+  }
+
   if (values.length >= 3) {
     return {
       presetId: String(values[0] || propertyId),
@@ -98,9 +107,18 @@ export function migrateNodeState(widgetValues, properties = {}) {
   }
 
   if (schema >= 3) {
+    const content = String(values[1] ?? values[0] ?? "");
+    if (propertyId && content === "" && values.every((value) => value == null || value === "")) {
+      return {
+        presetId: propertyId,
+        content: "",
+        dirty: false,
+        needsPresetSync: true,
+      };
+    }
     return {
       presetId: propertyId,
-      content: String(values[1] ?? values[0] ?? ""),
+      content,
       dirty,
       needsPresetSync: false,
     };
