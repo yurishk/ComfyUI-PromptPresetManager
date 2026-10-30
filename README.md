@@ -14,6 +14,7 @@ A shared, searchable prompt preset library for ComfyUI. Keep reusable prompts or
 - **Workflow-safe drafts**: the selected preset and local edits are serialized with the node, including duplicated nodes and reopened workflows.
 - **Native text output**: outputs one standard `STRING`, so it works with normal ComfyUI prompt inputs.
 - **Upstream text capture**: connect any `STRING` output to the optional `text` input; non-empty results are written back into the editable prompt box after execution.
+- **Recovery history**: preserve unsaved drafts and external results, undo preset overwrites, and restore deleted presets from history trash. Saving an external original removes its redundant external history directly. History defaults to 30 days; trash is kept for up to 7 days. [History rules](./docs/history-rules.md).
 - **Import and export**: back up or move the whole library, a folder, a filtered view, or an individual preset.
 - **English and Chinese UI**: follows the ComfyUI/browser locale automatically.
 
@@ -69,6 +70,7 @@ The shared library is stored in `data/presets.json`. Automatic backups are writt
 - **工作流持久化**：当前选择和本地修改会随节点保存，复制节点、切换或重新打开工作流后仍可恢复。
 - **原生文本输出**：仅输出标准 `STRING`，可直接连接 ComfyUI 的普通提示词输入。
 - **上游文本接收**：可将任意 `STRING` 输出连接到可选的 `text` 输入；执行后的非空结果会写回原生提示词框，方便继续修改。
+- **历史与回收站**：保护未保存草稿和外部结果，支持覆盖撤销、删除预设恢复。外部原文保存成功后直接清理对应外部历史，不进入回收站。普通历史默认保留 30 天，回收站最多保留 7 天。[当前规则](./docs/history-rules.md)。
 - **导入与导出**：可备份或迁移整个预设库、文件夹、筛选结果或单个预设。
 - **中英文界面**：根据 ComfyUI 或浏览器语言自动切换。
 

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>预设管理器 · 隔离验证</title>
+<style>
+body{background:#202124;color:#e6e6e6;font:14px 'Segoe UI','Microsoft YaHei',sans-serif;margin:0;padding:24px;box-sizing:border-box}
+main{width:min(480px,100%);box-sizing:border-box;border:1px solid #555;border-radius:10px;background:#303033;padding:12px}
+textarea.native{box-sizing:border-box;width:100%;min-height:210px;background:#202124;color:#eee;padding:12px;border:1px solid #555;resize:vertical;font:14px/1.5 inherit}
+nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}nav button{background:#333;color:#eee;border:1px solid #666;padding:8px;cursor:pointer}
+h1{font-size:18px}#note{color:#aaa;max-width:480px;line-height:1.6;font-size:12px}
+@media(max-width:600px){body{padding:10px}main{padding:4px}}
+</style>
+<h1>预设管理器</h1>
+<p id="note">隔离测试页：使用真实插件模块与 API，所有数据均为临时样例。</p>
+<main id="node"></main>
+<nav><button id="external">接收一次外部文本</button><button id="burst">连续接收 B / C / D</button></nav>
+<script type="module">
+window.previewApp={ui:{settings:{getSettingValue:()=> 'zh'}},canvas:{},graph:{_nodes:[],setDirtyCanvas(){}},registerExtension(extension){this.extension=extension}};
+await import('/extensions/ppm/preset_manager.js');
+const host=document.querySelector('#node');
+const native=document.createElement('textarea');native.className='native';native.setAttribute('aria-label','提示词内容');native.value='还没保存的草稿 A';
+class PreviewNode{
+  constructor(){this.type='PromptPresetManager';this.properties={promptPresetHistoryScope:'preview-node',promptPresetText:native.value};this.size=[480,550];this.graph=window.previewApp.graph;this.widgets=[{name:'prompt_text',value:native.value,callback(value){native.value=value}}];}
+  addDOMWidget(name,type,element){host.append(element);const widget={name,element};this.widgets.push(widget);return widget;}
+  setSize(size){this.size=size}
+}
+const extension=window.previewApp.extension;extension.init();await extension.beforeRegisterNodeDef(PreviewNode,{name:'PromptPresetManager'});
+window.testNode=new PreviewNode();window.previewApp.graph._nodes.push(window.testNode);
+window.testNode.onNodeCreated();window.testNode.onAdded();host.append(native);
+native.addEventListener('input',()=>{window.testNode.widgets[0].value=native.value;window.testNode.widgets[0].callback(native.value)});
+async function run(text){const result=await fetch('/preview/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,properties:window.testNode.properties})}).then(r=>r.json());window.testNode.onExecuted(result)}
+document.querySelector('#external').onclick=()=>run('portrait, soft light, silver hair, window light');
+document.querySelector('#burst').onclick=async()=>{for(const text of ['B · 外部结果','C · 外部结果','D · 最后一次结果'])await run(text)};
+</script>
+</html>

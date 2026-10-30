@@ -2,9 +2,10 @@
 // across nodes. Builds the entire UI with vanilla DOM so it works inside the
 // ComfyUI extension sandbox without any build step.
 
-import { PresetAPI, PresetStore, PRESET_TYPES, TYPE_MAP, DEFAULT_FOLDER_COLOR, downloadJson, sanitizeFilename } from "./preset_api.mjs";
+import { PresetAPI, PresetStore, PRESET_TYPES, TYPE_MAP, DEFAULT_FOLDER_COLOR, downloadJson, sanitizeFilename } from "./preset_api.mjs?v=8";
 import { tr } from "./i18n.mjs";
 import { buildFolderTree, collectFolderIds, filterPresets } from "./preset_model.mjs";
+import { openHistory } from "./preset_history.mjs?v=8";
 
 const PAGE_SIZE = 30;
 
@@ -101,6 +102,7 @@ class PresetManager {
     const stats = h("span", { class: "ppm-stats" }, "");
     this.statsEl = stats;
     const actions = h("div", { class: "ppm-header-actions" }, [
+      h("button", { class: "ppm-link-btn", onclick: () => this.openHistory() }, tr("历史记录", "History")),
       h("button", { class: "ppm-icon-btn ppm-close", title: tr("关闭", "Close"), onclick: () => this.close() }, "×"),
     ]);
     header.append(title, stats, actions);
@@ -177,6 +179,13 @@ class PresetManager {
   }
 
   // ---------- data ----------
+  openHistory() {
+    openHistory({ node: this.sourceNode, edit: (snapshot) => {
+      this.open(this.sourceNode, this.onSelect);
+      this.openPresetEditor(null, { initialDraft: snapshot });
+    } });
+  }
+
   async load() {
     try {
       this._useSnapshot(await PresetStore.load());
@@ -428,10 +437,10 @@ class PresetManager {
 
   async _delete(preset) {
     if (!confirm(tr(
-      `确定删除预设“${preset.name}”吗？此操作不可撤销。`,
-      `Delete preset “${preset.name}”? This cannot be undone.`,
+      `将预设“${preset.name}”移入历史回收站？回收站最多保留 7 天，历史保留期更短时按更短期限清理。`,
+      `Move preset “${preset.name}” to history trash? Trash is kept for up to 7 days, or less if history retention is shorter.`,
     ))) return;
-    try { await PresetStore.mutate(() => PresetAPI.deletePreset(preset.id)); toast(tr("已删除", "Deleted"), "success"); }
+    try { await PresetStore.mutate(() => PresetAPI.deletePreset(preset.id)); toast(tr("已移入历史回收站", "Moved to history trash"), "success"); }
     catch (e) { toast(e.message, "error"); }
   }
 
@@ -543,7 +552,8 @@ class PresetManager {
       const onSaved = this._editorOnSaved;
       let saved;
       if (this._editingPreset) {
-        saved = await PresetStore.mutate(() => PresetAPI.savePreset({ ...payload, id: this._editingPreset.id }));
+        saved = await PresetStore.mutate(() => PresetAPI.savePreset({ ...payload, id: this._editingPreset.id,
+          expectedUpdatedAt: this._editingPreset.updatedAt }));
         toast(tr("已更新", "Updated"), "success");
       } else {
         saved = await PresetStore.mutate(() => PresetAPI.savePreset(payload));

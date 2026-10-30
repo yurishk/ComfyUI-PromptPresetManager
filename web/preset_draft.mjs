@@ -36,7 +36,10 @@ export function payloadFromDraft(draft, preset = null) {
     tags: normalizeTags(draft.tagsText),
     folderId: draft.folderId || null,
   };
-  if (preset?.id) payload.id = preset.id;
+  if (preset?.id) {
+    payload.id = preset.id;
+    if (preset.updatedAt !== undefined) payload.expectedUpdatedAt = preset.updatedAt;
+  }
   return payload;
 }
 

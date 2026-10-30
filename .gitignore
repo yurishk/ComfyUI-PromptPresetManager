@@ -9,6 +9,7 @@ __pycache__/
 # Plugin local data (presets / folders / backups) — never commit user content
 data/
 backups/
+docs/
 *.bak
 *.tmp
 

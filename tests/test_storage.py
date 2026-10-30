@@ -123,10 +123,11 @@ def test_native_prompt_text_is_the_output_even_when_cleared(node_module):
 def test_nonempty_external_text_overrides_output_and_updates_ui(node_module):
     node = node_module.PromptPresetManager()
 
-    assert node.get_text("local draft", "enhanced prompt") == {
-        "ui": {"external_text": ["enhanced prompt"]},
-        "result": ("enhanced prompt",),
-    }
+    result = node.get_text("local draft", "enhanced prompt")
+    assert result["result"] == ("enhanced prompt",)
+    assert result["ui"]["external_text"] == ["enhanced prompt"]
+    assert result["ui"]["history_id"][0]
+    assert result["ui"]["history_error"] == [""]
 
 
 def test_empty_external_text_falls_back_to_native_prompt(node_module):

@@ -40,5 +40,5 @@ def isolated_store(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
-def node_module():
+def node_module(isolated_store):
     return nodes

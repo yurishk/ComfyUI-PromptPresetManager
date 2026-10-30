@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import os
 import shutil
 import threading
@@ -18,6 +19,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from . import history_store
+
+logger = logging.getLogger(__name__)
 
 PRESET_TYPES = (
     "positive",
@@ -355,7 +360,8 @@ def _new_preset(state: dict, data: dict, *, preset_id: str | None = None) -> dic
     return preset
 
 
-def _patch_preset(state: dict, preset: dict, data: dict) -> None:
+def _patch_preset(state: dict, preset: dict, data: dict, *, archive=True) -> str | None:
+    before = copy.deepcopy(preset)
     if "name" in data:
         preset["name"] = _clean_text(data.get("name")) or "未命名预设"
     if "type" in data:
@@ -373,7 +379,19 @@ def _patch_preset(state: dict, preset: dict, data: dict) -> None:
     for optional in ("isPublic", "author"):
         if optional in data:
             preset[optional] = data[optional]
-    preset["updatedAt"] = _now_iso()
+    changed = any(before.get(key) != preset.get(key) for key in history_store.EDIT_FIELDS)
+    history_id = None
+    if changed and archive:
+        # Archive only a version that already exists. If the subsequent JSON
+        # write fails, this is still an authentic snapshot, not a false save.
+        history_id = history_store.append(
+            history_path(), {**before, "presetId": before["id"]}, kind="preset",
+            source="preset", preset_id=before["id"],
+            event_key="version:" + hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
+        )
+    if changed or any(before.get(key) != preset.get(key) for key in ("isFavorite", "author", "isPublic")):
+        preset["updatedAt"] = _now_iso()
+    return history_id
 
 
 # Read API
@@ -420,6 +438,7 @@ def create_preset(data: dict) -> dict:
         preset = _new_preset(state, data)
         state["presets"].append(preset)
         _commit(state)
+        _cleanup_saved_external(state)
         return copy.deepcopy(preset)
 
 
@@ -431,14 +450,137 @@ def update_preset(preset_id: str, data: dict) -> dict | None:
         preset = _find(state, "presets", preset_id)
         if not preset:
             return None
-        _patch_preset(state, preset, data)
+        if "expectedUpdatedAt" in data and data["expectedUpdatedAt"] != preset.get("updatedAt"):
+            raise ValueError("预设已被其他操作修改，请查看历史或刷新后重试")
+        history_id = _patch_preset(state, preset, data)
         _commit(state)
+        _cleanup_saved_external(state)
+        result = copy.deepcopy(preset)
+        if history_id:
+            result["_undoHistoryId"] = history_id
+        return result
+
+
+def history_path():
+    return os.path.join(_DATA_DIR, "history.sqlite3")
+
+
+def record_text_history(snapshot, *, scope="", source="draft", event_key=None, checkpoint=False):
+    # Library versions have their own protection. Saved external originals do
+    # not need a second copy in text history either.
+    with _LOCK:
+        if source == "external":
+            if any(preset.get("content", "") == snapshot.get("content", "")
+                   for preset in _ensure_state_loaded()["presets"]):
+                return ""
+        elif is_saved_text_snapshot(snapshot):
+            return ""
+        return history_store.append(history_path(), snapshot, kind="checkpoint" if checkpoint else "text",
+                                    scope=scope, source=source, preset_id=snapshot.get("presetId") or "",
+                                    event_key=event_key)
+
+
+def _cleanup_saved_external(state):
+    if not os.path.isfile(history_path()):
+        return
+    try:
+        history_store.remove_saved_external(history_path(), (preset.get("content", "") for preset in state["presets"]))
+    except Exception:
+        # The preset has already committed. Do not report a failed save or
+        # encourage duplicate submission; maintenance will retry cleanup.
+        logger.exception("PromptPresetManager: saved external history cleanup deferred")
+
+
+def cleanup_history():
+    with _LOCK:
+        if os.path.isfile(history_path()):
+            _cleanup_saved_external(_ensure_state_loaded())
+
+
+def restore_deleted_preset_history(entry_id):
+    with _LOCK:
+        entry = history_store.get(history_path(), entry_id)
+        if not entry or entry["source"] != "deleted" or entry["deleted"] is None:
+            raise ValueError("已删除预设的记录已过期或不存在")
+        state = _ensure_state_loaded()
+        if _find(state, "presets", entry["preset_id"]):
+            raise ValueError("该预设已存在，请另存副本以保留两个版本")
+        maximum = _as_int(state["settings"].get("maxPresets"), DEFAULT_MAX_PRESETS)
+        if maximum > 0 and len(state["presets"]) >= maximum:
+            raise ValueError("预设数量已达上限，请先清理预设")
+        snapshot = dict(entry["snapshot"])
+        if snapshot.get("folderId") and not _find(state, "folders", snapshot["folderId"]):
+            snapshot["folderId"] = None
+        preset = _new_preset(state, snapshot, preset_id=entry["preset_id"])
+        state["presets"].append(preset)
+        _commit(state)
+        _cleanup_saved_external(state)
+        try:
+            history_store.manage(history_path(), [entry_id], "purge")
+        except Exception:
+            logger.exception("PromptPresetManager: restored preset trash cleanup deferred")
         return copy.deepcopy(preset)
+
+
+def is_saved_text_snapshot(snapshot):
+    if not isinstance(snapshot, dict) or "content" not in snapshot:
+        return False
+    with _LOCK:
+        presets = _ensure_state_loaded()["presets"]
+        for preset in presets:
+            if snapshot["content"] != preset.get("content", ""):
+                continue
+            # Partial backend workflow metadata is compared when available;
+            # full editor snapshots include every editable field.
+            matches = True
+            for key in history_store.EDIT_FIELDS:
+                if key == "content":
+                    continue
+                if key == "tags" and ("tags" in snapshot or "tagsText" in snapshot):
+                    value = _clean_tags(snapshot.get("tags", snapshot.get("tagsText")))
+                elif key not in snapshot:
+                    continue
+                elif key in ("name", "description"):
+                    value = _clean_text(snapshot[key])
+                elif key == "folderId":
+                    value = _clean_text(snapshot[key]) or None
+                else:
+                    value = snapshot[key]
+                if value != preset.get(key):
+                    matches = False
+                    break
+            if matches:
+                return True
+        return False
+
+
+def restore_preset_history(entry_id, expected_updated_at):
+    entry = history_store.get(history_path(), entry_id)
+    if not entry or entry["kind"] != "preset" or entry["deleted"] is not None:
+        raise ValueError("历史版本已过期或已删除")
+    with _LOCK:
+        state = _ensure_state_loaded()
+        payload = {key: entry["snapshot"][key] for key in history_store.EDIT_FIELDS if key in entry["snapshot"]}
+        if payload.get("folderId") and not _find(state, "folders", payload["folderId"]):
+            payload["folderId"] = None
+        payload["expectedUpdatedAt"] = expected_updated_at
+        result = update_preset(entry["preset_id"], payload)
+        if result is None:
+            raise ValueError("原预设已删除，请另存为新预设")
+        return result
 
 
 def delete_preset(preset_id: str) -> bool:
     with _LOCK:
         state = _ensure_state_loaded()
+        preset = _find(state, "presets", preset_id)
+        if not preset:
+            return False
+        recovery_id = history_store.append(history_path(), {**preset, "presetId": preset_id},
+                                           kind="preset", source="deleted", preset_id=preset_id)
+        # Preserve recovery before the destructive library mutation. A failed
+        # JSON commit may leave an extra trash copy, but never lose the preset.
+        history_store.manage(history_path(), [recovery_id], "delete")
         remaining = [preset for preset in state["presets"] if preset.get("id") != preset_id]
         if len(remaining) == len(state["presets"]):
             return False
@@ -677,6 +819,8 @@ def import_bundle(bundle: dict) -> dict:
     with _LOCK:
         state = _ensure_state_loaded()
         incoming_by_id = {_clean_text(item.get("id")): item for item in incoming_folders if item.get("id")}
+        original_ids = {preset["id"] for preset in state["presets"]}
+        archived_ids = set()
         existing_by_id = {item["id"]: item for item in state["folders"]}
         existing_by_path = _existing_folder_paths(state)
         id_map: dict[str, str] = {}
@@ -732,7 +876,10 @@ def import_bundle(bundle: dict) -> dict:
             if "folderId" in incoming:
                 payload["folderId"] = id_map.get(_clean_text(incoming.get("folderId")))
             if existing:
-                _patch_preset(state, existing, payload)
+                archived = _patch_preset(state, existing, payload,
+                    archive=existing["id"] in original_ids and existing["id"] not in archived_ids)
+                if archived:
+                    archived_ids.add(existing["id"])
                 existing_preset_by_key[(existing["name"], existing["type"])] = existing
                 updated += 1
             else:
@@ -767,6 +914,7 @@ def import_bundle(bundle: dict) -> dict:
         for index, preset in enumerate(state["presets"]):
             preset["sortOrder"] = index
         _commit(state)
+        _cleanup_saved_external(state)
         return {"added": added, "updated": updated}
 
 

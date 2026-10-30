@@ -1,5 +1,5 @@
 import { app } from "../../scripts/app.js";
-import { PRESET_TYPES, PresetAPI, PresetStore, TYPE_MAP } from "./preset_api.mjs";
+import { PRESET_TYPES, PresetAPI, PresetStore, TYPE_MAP } from "./preset_api.mjs?v=8";
 import { setPromptPresetLocale, tr } from "./i18n.mjs";
 import {
   draftMetadata,
@@ -8,9 +8,10 @@ import {
   migrateNodeState,
   payloadFromDraft,
   variantName,
-} from "./preset_draft.mjs?v=5";
+} from "./preset_draft.mjs?v=7";
 import { buildFolderTree, quickSearchPresets } from "./preset_model.mjs?v=4";
-import { getPresetManager } from "./preset_modal.mjs";
+import { getPresetManager } from "./preset_modal.mjs?v=8";
+import { createHistoryGuard, historyScope, newHistoryId, openHistory } from "./preset_history.mjs?v=8";
 
 const NODE_NAME = "PromptPresetManager";
 const PROMPT_WIDGET = "prompt_text";
@@ -30,7 +31,7 @@ function ensureStyles() {
   const link = document.createElement("link");
   link.id = "prompt-preset-manager-css";
   link.rel = "stylesheet";
-  link.href = new URL("./preset_manager.css?v=4", import.meta.url).href;
+  link.href = new URL("./preset_manager.css?v=6", import.meta.url).href;
   document.head.append(link);
 }
 
@@ -177,16 +178,21 @@ function buildPanel(node) {
   if (promptWidget) promptWidget.label = tr("提示词内容", "Prompt Text");
 
   const context = { folders: [], presets: [], loaded: false };
+  historyScope(node);
   const root = element("div", "ppm-panel ppm-quick-editor");
   const libraryButton = element("button", "ppm-link-btn", tr("管理预设库", "Manage Library"));
   libraryButton.type = "button";
   libraryButton.addEventListener("click", () => openManager(node));
+  const historyButton = element("button", "ppm-link-btn", tr("历史", "History"));
+  historyButton.type = "button";
+  historyButton.addEventListener("click", () => showHistory());
+  const headerActions = element("div", "ppm-panel-header-actions", [historyButton, libraryButton]);
   const header = element("div", "ppm-panel-header", [
     element("div", "ppm-panel-heading", [
       element("span", "ppm-panel-title", tr("预设快速编辑", "Preset Quick Editor")),
       element("span", "ppm-panel-shared", tr("全局共享", "Shared Globally")),
     ]),
-    libraryButton,
+    headerActions,
   ]);
 
   const badge = element("span", "ppm-badge ppm-hidden");
@@ -243,6 +249,7 @@ function buildPanel(node) {
   advancedButton.title = tr("在完整编辑器中修改全部字段", "Edit every field in the full editor");
   const actions = element("div", "ppm-panel-actions ppm-editor-actions", [createButton, overwriteButton, advancedButton]);
   const feedback = element("div", "ppm-node-feedback", tr("内容请直接在上方原生文本框中编辑", "Edit the content in the native text box above"));
+  feedback.setAttribute("role", "status");
 
   root.append(header, selection, quickSelect, primaryFields, moreButton, moreFields, actions, feedback);
 
@@ -260,6 +267,62 @@ function buildPanel(node) {
       tagsText: tagsInput.value,
       folderId: folderSelect.value || null,
     };
+  }
+
+  const readSnapshot = () => {
+    const draft = readDraft();
+    return { ...payloadFromDraft(draft), name: draft.name, presetId: selectedId(node) };
+  };
+  node._ppmReadHistorySnapshot = readSnapshot;
+  let draftTimer;
+  let lastCheckpoint = "";
+  let lastExternal = "";
+  function capture(snapshot, source = "draft", receiptId = "", checkpoint = false) {
+    if (source !== "external" && context.presets.some((preset) => !isDraftDirty(preset, {
+      ...snapshot, tagsText: snapshot.tags ?? snapshot.tagsText ?? [],
+    }))) return Promise.resolve("");
+    return PresetAPI.captureHistory({ scope: historyScope(node), snapshot, source, receiptId, checkpoint });
+  }
+  const historyGuard = createHistoryGuard({
+    read: readSnapshot,
+    capture,
+    status: (message) => setFeedback(message, "info"),
+    apply: (snapshot) => {
+      const endChange = beginGraphChange(node);
+      node._ppmSyncingDraft = true;
+      try {
+        syncSelectionId(node, snapshot.presetId || "");
+        writeDraft(snapshot);
+        persistMetadata();
+        node.properties[PROPERTY_REVISION] = currentPreset()?.updatedAt || "";
+      } finally { node._ppmSyncingDraft = false; endChange(); }
+      refreshState();
+    },
+  });
+  node._ppmRestoreHistory = async (snapshot) => {
+    const folders = PresetStore.getSnapshot().folders;
+    const presetId = context.presets.some((preset) => preset.id === snapshot.presetId) ? snapshot.presetId : "";
+    const restored = await historyGuard.replace({ ...snapshot, presetId,
+      folderId: folders.some((folder) => folder.id === snapshot.folderId) ? snapshot.folderId : null });
+    if (restored) setFeedback(tr("已恢复历史文本", "Historical text restored"), "success");
+    return restored;
+  };
+  function editHistoryCopy(snapshot) {
+    const manager = getPresetManager();
+    manager.open(node, applyPresetToNode);
+    const draft = { ...snapshot, tags: snapshot.tags || [] };
+    manager.openPresetEditor(null, { initialDraft: draft });
+  }
+  function showHistory(focusId = "") { openHistory({ node, edit: editHistoryCopy, focusId }); }
+  function scheduleCheckpoint() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => historyGuard.run(async () => {
+      const snapshot = readSnapshot();
+      const serialized = JSON.stringify(snapshot);
+      if (serialized === lastCheckpoint || !node.properties[PROPERTY_DIRTY]) return;
+      await capture(snapshot, "checkpoint", "", true);
+      lastCheckpoint = serialized;
+    }).catch((error) => setFeedback(`${tr("草稿尚未留存", "Draft not backed up yet")}: ${error.message}`, "error")), 1000);
   }
 
   function persistMetadata() {
@@ -299,18 +362,35 @@ function buildPanel(node) {
     feedback.dataset.kind = kind;
   }
 
-  function applyExternalText(value) {
+  function feedbackAction(message, label, action) {
+    setFeedback(message, "success");
+    const link = element("button", "ppm-link-btn", label);
+    link.type = "button";
+    link.addEventListener("click", async () => {
+      link.disabled = true;
+      try { await action(); }
+      catch (error) { setFeedback(error.message, "error"); }
+      finally { link.disabled = false; }
+    });
+    feedback.append(link);
+  }
+
+  async function applyExternalText(value, receiptId = "", historyError = "") {
     const incoming = String(value ?? "");
     if (incoming === "") return;
-    const endChange = beginGraphChange(node);
-    try {
-      setPromptValue(node, incoming, true);
-      refreshState();
-      setFeedback(tr("已接收外部文本，可继续编辑", "External text received; you can continue editing"), "success");
-      node.graph?.setDirtyCanvas?.(true, true);
-    } finally {
-      endChange();
+    if (historyError) {
+      setFeedback(`${tr("外部结果留存失败，原草稿已保留；打开历史后重试运行", "External history failed; draft kept. Retry the run")}: ${historyError}`, "error");
+      return;
     }
+    if (receiptId && lastExternal === receiptId) return;
+    const snapshot = { ...readSnapshot(), content: incoming };
+    const before = readSnapshot();
+    try {
+      const applied = await historyGuard.replace(snapshot, "external", receiptId);
+      if (receiptId) lastExternal = receiptId;
+      if (applied) feedbackAction(tr("已接收外部文本 · 原内容已留存", "External text received · Previous draft saved"),
+        tr("恢复上一条", "Restore previous"), () => node._ppmRestoreHistory(before));
+    } catch (error) { setFeedback(`${tr("历史保存失败，未替换当前草稿", "History failed; current draft kept")}: ${error.message}`, "error"); }
   }
   node._ppmApplyExternalText = applyExternalText;
 
@@ -380,25 +460,19 @@ function buildPanel(node) {
 
   function markDraftChanged() {
     if (node._ppmSyncingDraft) return;
+    historyGuard.changed();
     node.properties[PROPERTY_TEXT] = String(promptWidget?.value ?? "");
     persistMetadata();
     node.properties[PROPERTY_DIRTY] = isDraftDirty(currentPreset(), readDraft());
     refreshState();
+    scheduleCheckpoint();
   }
 
   function applyPreset(preset) {
     if (!preset) return;
-    node._ppmSyncingDraft = true;
-    try {
-      syncSelectionId(node, preset.id);
-      writeDraft(preset);
-      node.properties[PROPERTY_DIRTY] = false;
-      node.properties[PROPERTY_REVISION] = preset.updatedAt || "";
-    } finally {
-      node._ppmSyncingDraft = false;
-    }
-    refreshState();
-    setFeedback(`${tr("已载入", "Loaded")} “${preset.name}”`, "success");
+    return historyGuard.replace({ ...preset, presetId: preset.id }, "switch")
+      .then((applied) => { if (applied) setFeedback(`${tr("已载入", "Loaded")} “${preset.name}”`, "success"); })
+      .catch((error) => setFeedback(`${tr("载入失败，草稿已保留", "Load failed; draft kept")}: ${error.message}`, "error"));
   }
   node._ppmApplyPreset = applyPreset;
 
@@ -425,6 +499,9 @@ function buildPanel(node) {
     }
     node.properties[PROPERTY_DIRTY] = true;
     refreshState();
+    historyGuard.changed();
+    persistMetadata();
+    scheduleCheckpoint();
     setFeedback(tr("已解除关联，当前内容仍保留在节点中", "Preset detached; current text remains in the node"), "info");
   });
 
@@ -451,10 +528,12 @@ function buildPanel(node) {
     }
     createButton.disabled = true;
     overwriteButton.disabled = true;
+    const submitted = JSON.stringify(readSnapshot());
     try {
       let payload;
       if (mode === "overwrite" && preset) {
         payload = payloadFromDraft(draft, preset);
+        payload.expectedUpdatedAt = node.properties[PROPERTY_REVISION] || preset.updatedAt;
       } else {
         const name = preset && draft.name.trim() === preset.name
           ? variantName(preset.name, tr("变体", "Variant"), tr("新预设", "New Preset"))
@@ -462,13 +541,19 @@ function buildPanel(node) {
         payload = payloadFromDraft({ ...draft, name });
       }
       const saved = await PresetStore.mutate(() => PresetAPI.savePreset(payload));
-      applyPreset(saved);
-      setFeedback(
-        mode === "overwrite"
-          ? tr("已覆盖当前预设", "Selected preset overwritten")
-          : tr("已保存并切换到新预设", "Saved and switched to the new preset"),
-        "success",
-      );
+      if (submitted === JSON.stringify(readSnapshot())) {
+        await applyPreset(saved);
+      }
+      if (saved._undoHistoryId) {
+        feedbackAction(tr("已覆盖当前预设", "Selected preset overwritten"), tr("撤销", "Undo"), async () => {
+          const historyId = saved._undoHistoryId;
+          try {
+            if (node.properties[PROPERTY_DIRTY]) await capture(readSnapshot(), "draft");
+            await PresetStore.mutate(() => PresetAPI.restorePresetHistory(historyId, saved.updatedAt));
+            setFeedback(tr("已撤销覆盖，后续修改仍在历史中", "Overwrite undone; later versions remain in History"), "success");
+          } catch (error) { showHistory(historyId); throw error; }
+        });
+      } else setFeedback(tr("已保存预设；当前新编辑会继续保留", "Preset saved; any newer edits are kept"), "success");
     } catch (error) {
       setFeedback(`${tr("保存失败", "Save failed")}: ${error.message}`, "error");
     } finally {
@@ -482,7 +567,7 @@ function buildPanel(node) {
     const preset = currentPreset();
     const manager = getPresetManager();
     manager.open(node, (sourceNode, selected) => applyPresetToNode(sourceNode, selected));
-    manager.openPresetEditor(preset, {
+    manager.openPresetEditor(preset ? { ...preset, updatedAt: node.properties[PROPERTY_REVISION] || preset.updatedAt } : null, {
       initialDraft: readDraft(),
       onSaved: (saved) => applyPreset(saved),
     });
@@ -534,6 +619,8 @@ function buildPanel(node) {
 
   const originalRemoved = node.onRemoved;
   node.onRemoved = function (...args) {
+    clearTimeout(draftTimer);
+    historyGuard.dispose();
     unsubscribe();
     resizeObserver.disconnect();
     this._ppmPanelBuilt = false;
@@ -603,6 +690,7 @@ app.registerExtension({
       info.properties[PROPERTY_SCHEMA] = CURRENT_SCHEMA;
       info.properties[PROPERTY_DRAFT] = this._ppmReadDraftMetadata?.() || this.properties?.[PROPERTY_DRAFT] || {};
       info.properties[PROPERTY_TEXT] = text;
+      info.properties.promptPresetHistoryScope = historyScope(this);
       this.properties[PROPERTY_TEXT] = text;
       if (Array.isArray(info.widgets_values) && Array.isArray(this.widgets)) {
         const panelIndex = this.widgets.findIndex((widget) => widget.name === "preset_panel");
@@ -617,6 +705,10 @@ app.registerExtension({
     nodeType.prototype.onAdded = function (...args) {
       const result = originalAdded?.apply(this, args);
       syncSelectionId(this);
+      const scope = historyScope(this);
+      if (this.graph?._nodes?.some((other) => other !== this && other.type === this.type && other.properties?.promptPresetHistoryScope === scope)) {
+        this.properties.promptPresetHistoryScope = newHistoryId();
+      }
       return result;
     };
 
@@ -626,7 +718,7 @@ app.registerExtension({
       const payload = message?.external_text;
       const incoming = Array.isArray(payload) ? payload[0] : payload;
       if (typeof incoming === "string" && incoming !== "") {
-        this._ppmApplyExternalText?.(incoming);
+        this._ppmApplyExternalText?.(incoming, message?.history_id?.[0] || "", message?.history_error?.[0] || "");
       }
       return result;
     };

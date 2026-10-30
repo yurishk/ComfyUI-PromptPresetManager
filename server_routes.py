@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import asyncio
+from contextlib import suppress
 
-from . import storage
+from . import storage, history_store
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,103 @@ def register_routes() -> None:
 
     def failure(message: str, status: int):
         return web.json_response({"ok": False, "error": message}, status=status)
+
+    @routes.get(f"{ROUTE_PREFIX}/history")
+    async def get_history(request):
+        try:
+            q = request.rel_url.query
+            await asyncio.to_thread(storage.cleanup_history)
+            result = await asyncio.to_thread(history_store.list_entries, storage.history_path(),
+                scope=q.get("scope", ""), preset_id=q.get("presetId", ""), kind=q.get("kind", ""),
+                query=q.get("query", "")[:500], source=q.get("source", ""),
+                trash=q.get("trash") == "true", page=int(q.get("page", "1")))
+            return web.json_response({"ok": True, **result})
+        except Exception as exc:
+            return failure(str(exc), 500)
+
+    @routes.get(f"{ROUTE_PREFIX}/history/entry")
+    async def history_entry(request):
+        entry = await asyncio.to_thread(history_store.get, storage.history_path(), request.rel_url.query.get("id", ""))
+        return web.json_response({"ok": True, "entry": entry}) if entry else failure("历史已过期或已删除", 404)
+
+    @routes.post(f"{ROUTE_PREFIX}/history/capture")
+    async def capture_history(request):
+        data = await read_object(request)
+        try:
+            receipt = data.get("receiptId")
+            existing = await asyncio.to_thread(history_store.get, storage.history_path(), receipt) if receipt else None
+            if existing and existing["deleted"] is None and existing["scope"] == str(data.get("scope", "")):
+                return web.json_response({"ok": True, "id": existing["id"]})
+            if data.get("source", "draft") not in ("draft", "restore", "external", "checkpoint", "switch"):
+                raise ValueError("无效的记录来源")
+            entry_id = await asyncio.to_thread(storage.record_text_history, data.get("snapshot", {}),
+                scope=str(data.get("scope", ""))[:200], source=data.get("source", "draft"),
+                event_key=str(data["eventKey"])[:200] if data.get("eventKey") else None,
+                checkpoint=bool(data.get("checkpoint")))
+            return web.json_response({"ok": True, "id": entry_id})
+        except Exception as exc:
+            return failure(str(exc), 500)
+
+    @routes.post(f"{ROUTE_PREFIX}/history/manage")
+    async def manage_history(request):
+        data = await read_object(request)
+        try:
+            def manage_records():
+                ids, action = data.get("ids"), data.get("action")
+                if not isinstance(ids, list) or len(ids) > 1000:
+                    raise ValueError("无效的历史管理操作")
+                if action != "restore":
+                    return history_store.manage(storage.history_path(), ids, action, data.get("note", ""))
+                for entry_id in ids:
+                    entry = history_store.get(storage.history_path(), entry_id)
+                    if entry and entry["source"] == "deleted":
+                        storage.restore_deleted_preset_history(entry_id)
+                    else:
+                        history_store.manage(storage.history_path(), [entry_id], "restore")
+            await asyncio.to_thread(manage_records)
+            return web.json_response({"ok": True})
+        except ValueError as exc:
+            return failure(str(exc), 400)
+        except Exception as exc:
+            return failure(str(exc), 500)
+
+    @routes.post(f"{ROUTE_PREFIX}/history/settings")
+    async def history_settings(request):
+        data = await read_object(request)
+        try:
+            days = await asyncio.to_thread(history_store.settings, storage.history_path(), data.get("retentionDays"))
+            return web.json_response({"ok": True, "retentionDays": days})
+        except ValueError as exc:
+            return failure(str(exc), 400)
+
+    @routes.post(f"{ROUTE_PREFIX}/history/restore-preset")
+    async def restore_history(request):
+        data = await read_object(request)
+        try:
+            preset = await asyncio.to_thread(storage.restore_preset_history, data.get("id", ""), data.get("expectedUpdatedAt"))
+            return success(preset=preset)
+        except ValueError as exc:
+            return failure(str(exc), 409)
+        except Exception as exc:
+            return failure(str(exc), 500)
+
+    async def history_maintenance(app):
+        async def cleanup():
+            while True:
+                try:
+                    if storage.os.path.isfile(storage.history_path()):
+                        await asyncio.to_thread(storage.cleanup_history)
+                except Exception:
+                    logger.exception("PromptPresetManager history cleanup failed")
+                await asyncio.sleep(3600)
+        task = asyncio.create_task(cleanup())
+        yield
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    if hasattr(instance, "app"):
+        instance.app.cleanup_ctx.append(history_maintenance)
 
     @routes.get(f"{ROUTE_PREFIX}/all")
     async def get_all(request):  # noqa: ANN001
@@ -89,9 +188,13 @@ def register_routes() -> None:
     @routes.post(f"{ROUTE_PREFIX}/preset/delete")
     async def delete_preset(request):  # noqa: ANN001
         data = await read_object(request)
-        if not storage.delete_preset(data.get("id", "")):
-            return failure("预设不存在", 404)
-        return success()
+        try:
+            if not storage.delete_preset(data.get("id", "")):
+                return failure("预设不存在", 404)
+            return success()
+        except Exception as exc:
+            logger.exception("PromptPresetManager: delete_preset failed")
+            return failure(str(exc), 500)
 
     @routes.post(f"{ROUTE_PREFIX}/preset/favorite")
     async def favorite_preset(request):  # noqa: ANN001

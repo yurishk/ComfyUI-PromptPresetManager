@@ -19,6 +19,12 @@ async function call(path, options = {}) {
 }
 
 export const PresetAPI = {
+  history: (filters = {}) => call(`/history?${new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== "" && value != null))}`),
+  historyEntry: (id) => call(`/history/entry?id=${encodeURIComponent(id)}`).then((result) => result.entry),
+  captureHistory: (data) => call("/history/capture", { method: "POST", body: JSON.stringify(data) }).then((result) => result.id),
+  manageHistory: (ids, action, note = "") => call("/history/manage", { method: "POST", body: JSON.stringify({ ids, action, note }) }),
+  historySettings: (retentionDays) => call("/history/settings", { method: "POST", body: JSON.stringify({ retentionDays }) }),
+  restorePresetHistory: (id, expectedUpdatedAt) => call("/history/restore-preset", { method: "POST", body: JSON.stringify({ id, expectedUpdatedAt }) }).then((result) => result.preset),
   getAll: () => call("/all").then((result) => result.data),
   getRevision: () => call("/revision").then((result) => result.revision),
   getContent: (id) => call(`/content?id=${encodeURIComponent(id || "")}`).then((result) => result.content || ""),
